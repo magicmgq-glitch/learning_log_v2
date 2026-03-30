@@ -23,7 +23,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = 'django-insecure-$4u*6r4&*u7-pnn2dsq^%(75dy3^5yx_^(4-!_h26m&iqp4&=g'
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = False
 
 ALLOWED_HOSTS = ['124.223.158.110', '127.0.0.1', 'localhost']
 
@@ -36,6 +36,7 @@ INSTALLED_APPS = [
     'users',
     'markdownify',    # 引入 Markdown 渲染插件
     'django_bootstrap5',   # 引入 Bootstrap 魔法
+    'django_cleanup.apps.CleanupConfig',
 
     # Django默认自带的应用程序
     'django.contrib.admin',
@@ -148,6 +149,26 @@ MARKDOWNIFY = {
             'a', 'img',
             # 代码与引用
             'blockquote', 'pre', 'code'
+        ]
+    }
+}
+
+# ==========================================
+# Markdownify 富文本安全过滤白名单配置
+# ==========================================
+MARKDOWNIFY = {
+    "default": {
+        "WHITELIST_TAGS": [
+            # 允许的基本文本格式
+            'a', 'blockquote', 'code', 'em', 'strong', 'p', 'br', 'hr', 'pre',
+            'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+            'ul', 'ol', 'li',
+            # 💥 极其关键：允许显示图片！
+            'img'
+        ],
+        "WHITELIST_ATTRS": [
+            # 允许读取的属性（尤其是图片的 src 和 alt）
+            'href', 'src', 'alt', 'title', 'class'
         ]
     }
 }

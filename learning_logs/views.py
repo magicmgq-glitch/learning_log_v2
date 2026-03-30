@@ -1,3 +1,5 @@
+from django.http import JsonResponse
+from django.core.files.storage import default_storage
 from django.contrib.auth.decorators import login_required
 from django.http import Http404
 from django.shortcuts import render, redirect
@@ -119,3 +121,84 @@ def edit_entry(request, entry_id):
 
     context = {'entry': entry, 'topic': topic, 'form': form}
     return render(request, 'learning_logs/edit_entry.html', context)
+
+
+@login_required
+def upload_image(request):
+    """
+    专门给 Markdown 编辑器提供图片无刷新上传的后端 API 接口。
+    只接收 POST 请求中的 image 文件，返回 JSON 格式的图片网址。
+    """
+    if request.method == 'POST' and request.FILES.get('image'):
+        upload = request.FILES['image']
+
+        # 1. 使用 Django 默认的文件存储系统，把图片存入 media/editor/ 文件夹
+        # 这里用了一个 f-string 拼接路径，防止图片名字冲突可以加点时间戳，但目前保持简单
+        filename = default_storage.save(f"editor/{upload.name}", upload)
+
+        # 2. 获取这张图片在服务器上的绝对网络地址
+        image_url = default_storage.url(filename)
+
+        # 3. 极其关键：按照前端编辑器要求的固定格式，返回 JSON 密码本
+        return JsonResponse({
+            'data': {
+                'filePath': image_url
+            }
+        })
+
+    # ==========================================
+    # V3.0 新增：修改与删除功能
+    # ==========================================
+
+@login_required
+def edit_topic(request, topic_id):
+    """修改主题的名称"""
+    topic = Topic.objects.get(id=topic_id)
+    # 保护机制：确保只能修改自己的主题
+    if topic.owner != request.user:
+        raise Http404
+
+    if request.method != 'POST':
+        # 初次请求：使用当前主题的内容填充表单
+        form = TopicForm(instance=topic)
+    else:
+        # POST 提交的数据：保存修改
+        form = TopicForm(instance=topic, data=request.POST)
+        if form.is_valid():
+            form.save()
+            return redirect('learning_logs:topic', topic_id=topic.id)
+
+    context = {'topic': topic, 'form': form}
+    return render(request, 'learning_logs/edit_topic.html', context)
+
+@login_required
+def delete_topic(request, topic_id):
+    """删除整个主题及其包含的所有笔记"""
+    topic = Topic.objects.get(id=topic_id)
+    if topic.owner != request.user:
+        raise Http404
+
+    # 为了安全，只允许通过 POST 请求进行删除操作
+    if request.method == 'POST':
+        topic.delete()
+        # 删除后回到所有主题列表页
+        return redirect('learning_logs:topics')
+
+    return redirect('learning_logs:topic', topic_id=topic.id)
+
+@login_required
+def delete_entry(request, entry_id):
+    """删除单条笔记"""
+    entry = Entry.objects.get(id=entry_id)
+    topic = entry.topic
+    if topic.owner != request.user:
+        raise Http404
+
+    if request.method == 'POST':
+        entry.delete()
+
+    # 删除笔记后，留在当前主题页面
+    return redirect('learning_logs:topic', topic_id=topic.id)
+
+    # 如果上传失败，返回错误状态码 400
+    return JsonResponse({'error': '上传失败'}, status=400)

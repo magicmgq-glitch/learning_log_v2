@@ -1,0 +1,25 @@
+{% extends "learning_logs/base.html" %}
+{% load django_bootstrap5 %}
+
+{% block content %}
+<div class="row justify-content-center mt-4">
+    <div class="col-md-8">
+        <div class="card shadow-sm border-0">
+            <div class="card-header bg-white pb-0 border-0">
+                <h4 class="mb-0 text-primary">修改主题名称</h4>
+            </div>
+            <div class="card-body">
+                <form action="{% url 'learning_logs:edit_topic' topic.id %}" method="post">
+                    {% csrf_token %}
+                    {% bootstrap_form form %}
+                    
+                    <div class="d-flex gap-2 mt-3">
+                        {% bootstrap_button button_type="submit" content="保存修改" button_class="btn-primary" %}
+                        <a href="{% url 'learning_logs:topic' topic.id %}" class="btn btn-outline-secondary">放弃修改</a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock content %}

@@ -14,4 +14,12 @@ urlpatterns = [
     path('new_topic/', views.new_topic, name='new_topic'),
     path('new_entry/<int:topic_id>/', views.new_entry, name='new_entry'),
     path('edit_entry/<int:entry_id>/', views.edit_entry, name='edit_entry'),
+    # 专门处理图片无刷新上传的暗门
+    path('upload_image/', views.upload_image, name='upload_image'),
+    # 修改主题
+    path('edit_topic/<int:topic_id>/', views.edit_topic, name='edit_topic'),
+    # 删除主题
+    path('delete_topic/<int:topic_id>/', views.delete_topic, name='delete_topic'),
+    # 删除笔记
+    path('delete_entry/<int:entry_id>/', views.delete_entry, name='delete_entry'),
 ]

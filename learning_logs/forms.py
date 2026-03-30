@@ -14,7 +14,7 @@ class EntryForm(forms.ModelForm):
     """基于 Entry 模型自动生成添加条目的表单"""
     class Meta:
         model = Entry
-        fields = ['text', 'image', 'video', 'document']
+        fields = ['text', 'video', 'document']
         labels = {'text': '笔记内容：'}
         # widgets 可以让我们定制 HTML 输入框的样式，这里把文本框加宽到 80 列
         widgets = {'text': forms.Textarea(attrs={'cols': 80})}

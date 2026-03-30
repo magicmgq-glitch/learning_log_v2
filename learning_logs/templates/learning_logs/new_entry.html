@@ -2,6 +2,9 @@
 {% load django_bootstrap5 %}
 
 {% block content %}
+    <link rel="stylesheet" href="https://unpkg.com/easymde/dist/easymde.min.css">
+    <script src="https://unpkg.com/easymde/dist/easymde.min.js"></script>
+
     <div class="row justify-content-center mt-4">
         <div class="col-md-10 col-lg-8">
             <div class="card shadow-sm border-0">
@@ -11,63 +14,147 @@
                         <h4 class="fw-bold text-primary mt-1">{{ topic.text }}</h4>
                     </div>
 
-                    <form action="{% url 'learning_logs:new_entry' topic.id %}" method="post" enctype="multipart/form-data">
+                    <form action="{% url 'learning_logs:new_entry' topic.id %}" method="post" enctype="multipart/form-data" novalidate>
                         {% csrf_token %}
-                        {% bootstrap_form form %}
-                        <div class="d-flex justify-content-between mt-4">
-                            <a href="{% url 'learning_logs:topic' topic.id %}" class="btn btn-outline-secondary">取消</a>
-                            <button type="submit" class="btn btn-success px-5">发布笔记</button>
-                        </div>
+
+                        {% bootstrap_field form.text %}
+
+                        <details class="mb-4 mt-2">
+                            <summary class="text-muted" style="cursor: pointer; user-select: none;">
+                                📎 添加视频或附件 (可选)
+                            </summary>
+                            <div class="card card-body bg-light mt-2 border-0 shadow-sm">
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        {% bootstrap_field form.video %}
+                                    </div>
+                                    <div class="col-md-6">
+                                        {% bootstrap_field form.document %}
+                                    </div>
+                                </div>
+                            </div>
+                        </details>
+
+                        {% bootstrap_button button_type="submit" content="添加条目" button_class="btn-primary" %}
                     </form>
+
                 </div>
             </div>
         </div>
     </div>
 
     <script>
-        // 设定最大限制为 50MB
-        const MAX_MB = 50;
-        const MAX_BYTES = MAX_MB * 1024 * 1024;
+        // 【极其重要】：让这层魔法等待整个网页(DOM)完全加载完毕后再施展！
+        document.addEventListener("DOMContentLoaded", function() {
 
-        // 获取页面上所有的文件输入框
-        const fileInputs = document.querySelectorAll('input[type="file"]');
+            // ==========================================
+            // 【第一部分：V2.0 的 50MB 限制与取消按钮代码】
+            // ==========================================
+            const MAX_MB = 50;
+            const MAX_BYTES = MAX_MB * 1024 * 1024;
+            const fileInputs = document.querySelectorAll('input[type="file"]');
 
-        fileInputs.forEach(function(input) {
-            // 1. 监听文件选择事件，超大文件直接弹窗并清空
-            input.addEventListener('change', function() {
-                if (this.files.length > 0) {
-                    const fileSize = this.files[0].size;
-                    if (fileSize > MAX_BYTES) {
-                        alert('哎呀，文件太大了！当前文件大小约 ' + (fileSize / 1024 / 1024).toFixed(2) + 'MB。\n为保证速度，最大只支持 ' + MAX_MB + 'MB，请重新选择。');
-                        this.value = ''; // 核心动作：直接清空输入框，阻止上传
+            fileInputs.forEach(function(input) {
+                const clearBtn = document.createElement('button');
+                clearBtn.type = 'button';
+                clearBtn.className = 'btn btn-sm btn-outline-danger mt-2 mb-3 d-block';
+                clearBtn.innerText = '取消选择此文件';
+                clearBtn.style.display = 'none';
+
+                input.parentNode.insertBefore(clearBtn, input.nextSibling);
+
+                input.addEventListener('change', function() {
+                    if (this.files.length > 0) {
+                        const fileSize = this.files[0].size;
+                        if (fileSize > MAX_BYTES) {
+                            alert('哎呀，文件太大了！当前文件大小约 ' + (fileSize / 1024 / 1024).toFixed(2) + 'MB。\n为保证速度，最大只支持 ' + MAX_MB + 'MB，请重新选择。');
+                            this.value = '';
+                            clearBtn.style.display = 'none';
+                        } else {
+                            clearBtn.style.display = 'inline-block';
+                        }
+                    } else {
+                        clearBtn.style.display = 'none';
                     }
+                });
+
+                clearBtn.addEventListener('click', function() {
+                    input.value = '';
+                    this.style.display = 'none';
+                });
+            });
+
+            // ==========================================
+            // 【第二部分：V3.0 的 EasyMDE 富文本编辑器代码】
+            // ==========================================
+
+            // 1. 精准定位：Django 默认会给文本框加上 id="id_text"
+            const textArea = document.getElementById('id_text');
+
+            // 2. 挖出真实的 CSRF 令牌
+            const csrfInput = document.querySelector('[name=csrfmiddlewaretoken]');
+            const csrfToken = csrfInput ? csrfInput.value : '';
+
+            // 3. 启动编辑器并接管上传
+            if (textArea) {
+                const easymde = new EasyMDE({
+                    element: textArea,
+                    uploadImage: true,
+
+                    // 【核心修改】：自己接管上传逻辑，完美适配 Django 后端
+                    imageUploadFunction: function(file, onSuccess, onError) {
+                        // 打包图片数据
+                        let formData = new FormData();
+                        formData.append('image', file);
+
+                        // 使用现代的 fetch API 发送请求到后端的特工部门
+                        fetch("{% url 'learning_logs:upload_image' %}", {
+                            method: 'POST',
+                            headers: {
+                                'X-CSRFToken': csrfToken  // 恭敬地递上 Django 需要的通行证
+                            },
+                            body: formData
+                        })
+                        .then(response => {
+                            if (!response.ok) { throw new Error('网络请求失败'); }
+                            return response.json();
+                        })
+                        .then(data => {
+                            if (data.error) {
+                                onError(data.error); // 后端报错
+                            } else {
+                                onSuccess(data.data.filePath); // 成功，把网址交给编辑器
+                            }
+                        })
+                        .catch(error => {
+                            console.error('上传出错:', error);
+                            onError('图片上传失败，请检查网络或刷新页面重试。');
+                        });
+                    },
+
+                    // 汉化提示
+                    imageTexts: {
+                        sbInit: '可以直接将图片拖拽或粘贴到此窗口内',
+                        sbOnDragEnter: '松开鼠标立即上传',
+                        sbOnDrop: '拼命上传中...',
+                        sbProgress: '上传中 ({progress})',
+                        sbDone: '上传成功！',
+                    },
+                    toolbar: ["bold", "italic", "heading", "|", "quote", "unordered-list", "ordered-list", "|", "link", "upload-image", "preview", "side-by-side", "fullscreen", "|", "guide"]
+                });
+
+                // 【核心修改】：在表单提交前，强制把编辑器里的内容同步回那个隐藏的输入框
+                const form = textArea.closest('form');
+                if (form) {
+                    form.addEventListener('submit', function() {
+                        easymde.forceSync();
+                    });
                 }
-            });
 
-            // 2. 在每个文件上传按钮旁边，动态添加一个“取消/清空”按钮
-            const clearBtn = document.createElement('button');
-            clearBtn.type = 'button';
-            clearBtn.className = 'btn btn-sm btn-outline-danger mt-1 mb-3';
-            clearBtn.innerText = '取消选择此文件';
-            clearBtn.style.display = 'none'; // 默认隐藏
+            } else {
+                console.error("未找到日记输入框，EasyMDE 启动失败！");
+            }
 
-            // 把取消按钮插到文件选择框的下面
-            input.parentNode.insertBefore(clearBtn, input.nextSibling);
-
-            // 选择文件后显示取消按钮
-            input.addEventListener('change', function() {
-                if (this.files.length > 0) {
-                    clearBtn.style.display = 'inline-block';
-                } else {
-                    clearBtn.style.display = 'none';
-                }
-            });
-
-            // 点击取消按钮时，清空输入框并隐藏自己
-            clearBtn.addEventListener('click', function() {
-                input.value = '';
-                this.style.display = 'none';
-            });
         });
     </script>
 
