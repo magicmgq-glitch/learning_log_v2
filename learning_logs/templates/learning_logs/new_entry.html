@@ -23,4 +23,52 @@
             </div>
         </div>
     </div>
+
+    <script>
+        // 设定最大限制为 50MB
+        const MAX_MB = 50;
+        const MAX_BYTES = MAX_MB * 1024 * 1024;
+
+        // 获取页面上所有的文件输入框
+        const fileInputs = document.querySelectorAll('input[type="file"]');
+
+        fileInputs.forEach(function(input) {
+            // 1. 监听文件选择事件，超大文件直接弹窗并清空
+            input.addEventListener('change', function() {
+                if (this.files.length > 0) {
+                    const fileSize = this.files[0].size;
+                    if (fileSize > MAX_BYTES) {
+                        alert('哎呀，文件太大了！当前文件大小约 ' + (fileSize / 1024 / 1024).toFixed(2) + 'MB。\n为保证速度，最大只支持 ' + MAX_MB + 'MB，请重新选择。');
+                        this.value = ''; // 核心动作：直接清空输入框，阻止上传
+                    }
+                }
+            });
+
+            // 2. 在每个文件上传按钮旁边，动态添加一个“取消/清空”按钮
+            const clearBtn = document.createElement('button');
+            clearBtn.type = 'button';
+            clearBtn.className = 'btn btn-sm btn-outline-danger mt-1 mb-3';
+            clearBtn.innerText = '取消选择此文件';
+            clearBtn.style.display = 'none'; // 默认隐藏
+
+            // 把取消按钮插到文件选择框的下面
+            input.parentNode.insertBefore(clearBtn, input.nextSibling);
+
+            // 选择文件后显示取消按钮
+            input.addEventListener('change', function() {
+                if (this.files.length > 0) {
+                    clearBtn.style.display = 'inline-block';
+                } else {
+                    clearBtn.style.display = 'none';
+                }
+            });
+
+            // 点击取消按钮时，清空输入框并隐藏自己
+            clearBtn.addEventListener('click', function() {
+                input.value = '';
+                this.style.display = 'none';
+            });
+        });
+    </script>
+
 {% endblock content %}
