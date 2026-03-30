@@ -1,0 +1,31 @@
+{% extends "learning_logs/base.html" %}
+{% load markdownify %}
+
+{% block content %}
+    <div class="d-flex justify-content-between align-items-center mb-4 mt-3 pb-2 border-bottom">
+        <h3 class="fw-bold text-primary">📚 {{ topic.text }}</h3>
+        <a href="{% url 'learning_logs:new_entry' topic.id %}" class="btn btn-success btn-sm shadow-sm">
+            + 写新笔记
+        </a>
+    </div>
+
+    <div class="mb-5">
+        {% for entry in entries %}
+            <div class="card mb-4 shadow-sm border-0">
+                <div class="card-header bg-light d-flex justify-content-between align-items-center text-muted small py-2">
+                    <span>记录于：{{ entry.date_added|date:'Y年m月d日 H:i' }}</span>
+                    <a href="{% url 'learning_logs:edit_entry' entry.id %}" class="text-decoration-none text-secondary">
+                        ✏️ 编辑
+                    </a>
+                </div>
+                <div class="card-body px-4 py-3">
+                    {{ entry.text|markdownify }}
+                </div>
+            </div>
+        {% empty %}
+            <div class="text-center text-muted mt-5 p-5 bg-white rounded shadow-sm">
+                还没有为这个主题写下任何笔记，开始你的第一次记录吧。
+            </div>
+        {% endfor %}
+    </div>
+{% endblock content %}

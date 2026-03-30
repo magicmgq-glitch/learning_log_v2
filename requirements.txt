@@ -1,0 +1,12 @@
+asgiref==3.11.1
+bleach==6.3.0
+Django==6.0.3
+django-bootstrap5==26.2
+django-markdownify==0.9.6
+gunicorn==25.3.0
+Markdown==3.10.2
+packaging==26.0
+sqlparse==0.5.5
+tinycss2==1.4.0
+tzdata==2025.3
+webencodings==0.5.1

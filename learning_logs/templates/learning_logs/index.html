@@ -1,0 +1,19 @@
+{% extends "learning_logs/base.html" %}
+
+{% block content %}
+    <div class="p-5 mb-4 bg-white rounded-3 shadow-sm border border-light">
+        <div class="container-fluid py-5 text-center">
+            <h1 class="display-5 fw-bold text-primary">记录你的学习之旅</h1>
+            <p class="col-md-8 mx-auto fs-4 text-muted mt-3">
+                这是一个专属的学习笔记应用。随时随地创建主题，使用 Markdown 沉淀知识，并支持多终端完美适配。
+            </p>
+
+            {% if user.is_authenticated %}
+                <a href="{% url 'learning_logs:topics' %}" class="btn btn-primary btn-lg mt-4 px-5">查看我的笔记</a>
+            {% else %}
+                <a href="{% url 'users:register' %}" class="btn btn-primary btn-lg mt-4 px-5 me-2">免费注册</a>
+                <a href="{% url 'users:login' %}" class="btn btn-outline-secondary btn-lg mt-4 px-5">登录</a>
+            {% endif %}
+        </div>
+    </div>
+{% endblock content %}

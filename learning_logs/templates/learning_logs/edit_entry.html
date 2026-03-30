@@ -1,0 +1,26 @@
+{% extends "learning_logs/base.html" %}
+{% load django_bootstrap5 %}
+
+{% block content %}
+    <div class="row justify-content-center mt-4">
+        <div class="col-md-10 col-lg-8">
+            <div class="card shadow-sm border-0">
+                <div class="card-body p-4 p-md-5">
+                    <div class="mb-4">
+                        <span class="text-muted">正在编辑主题下的记录：</span>
+                        <h4 class="fw-bold text-primary mt-1">{{ topic.text }}</h4>
+                    </div>
+
+                    <form action="{% url 'learning_logs:edit_entry' entry.id %}" method="post">
+                        {% csrf_token %}
+                        {% bootstrap_form form %}
+                        <div class="d-flex justify-content-between mt-4">
+                            <a href="{% url 'learning_logs:topic' topic.id %}" class="btn btn-outline-secondary">放弃修改</a>
+                            <button type="submit" class="btn btn-primary px-5">保存更改</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+{% endblock content %}
