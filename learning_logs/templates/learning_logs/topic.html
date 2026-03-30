@@ -20,6 +20,30 @@
                 </div>
                 <div class="card-body px-4 py-3">
                     {{ entry.text|markdownify }}
+                    <div class="mt-3">{{ entry.text|markdownify }}</div>
+
+                    {% if entry.image %}
+                        <div class="mt-3">
+                            <img src="{{ entry.image.url }}" class="img-fluid rounded shadow-sm" style="max-height: 400px;" alt="笔记图片">
+                        </div>
+                    {% endif %}
+
+                    {% if entry.video %}
+                        <div class="mt-3">
+                            <video controls class="w-100 rounded shadow-sm" style="max-height: 400px;">
+                                <source src="{{ entry.video.url }}" type="video/mp4">
+                                您的浏览器不支持视频播放。
+                            </video>
+                        </div>
+                    {% endif %}
+
+                    {% if entry.document %}
+                        <div class="mt-3 border-top pt-3">
+                            <a href="{{ entry.document.url }}" class="btn btn-sm btn-outline-primary" download>
+                                📎 下载附件
+                            </a>
+                        </div>
+                    {% endif %}
                 </div>
             </div>
         {% empty %}

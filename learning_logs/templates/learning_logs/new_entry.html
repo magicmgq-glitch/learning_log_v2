@@ -11,7 +11,7 @@
                         <h4 class="fw-bold text-primary mt-1">{{ topic.text }}</h4>
                     </div>
 
-                    <form action="{% url 'learning_logs:new_entry' topic.id %}" method="post">
+                    <form action="{% url 'learning_logs:new_entry' topic.id %}" method="post" enctype="multipart/form-data">
                         {% csrf_token %}
                         {% bootstrap_form form %}
                         <div class="d-flex justify-content-between mt-4">

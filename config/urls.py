@@ -15,6 +15,8 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.urls import path, include
+from django.conf import settings  # 新增
+from django.conf.urls.static import static  # 新增
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -23,3 +25,7 @@ urlpatterns = [
     # 新增下面这行：如果是空路径（主页），就转交给learning_logs的urls处理
     path('', include('learning_logs.urls')),
 ]
+
+# 新增这段逻辑：允许在本地测试时直接通过网址查看上传的图片和视频
+if settings.DEBUG:
+    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

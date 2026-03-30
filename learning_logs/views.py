@@ -72,7 +72,7 @@ def new_entry(request, topic_id):
         form = EntryForm()
     else:
         # POST 提交的数据，对数据进行处理
-        form = EntryForm(data=request.POST)
+        form = EntryForm(data=request.POST, files=request.FILES)
         if form.is_valid():
             # commit=False 的意思是：先别急着存进数据库，让我再加点料！
             new_entry = form.save(commit=False)
@@ -111,7 +111,7 @@ def edit_entry(request, entry_id):
         # POST 提交的数据：对数据进行处理
         # 这里必须同时传入 instance=entry 和 data=request.POST
         # 意思是：请用用户新提交的 data，去覆盖掉这个 entry 原本的旧数据
-        form = EntryForm(instance=entry, data=request.POST)
+        form = EntryForm(instance=entry, data=request.POST, files=request.FILES)
         if form.is_valid():
             form.save()
             # 修改成功后，跳回到该主题的详情页去查看最新结果

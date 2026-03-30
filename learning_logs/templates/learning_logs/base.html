@@ -12,14 +12,19 @@
 
     <nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-4 shadow-sm">
         <div class="container">
-            <a class="navbar-brand fw-bold" href="{% url 'learning_logs:index' %}">学习笔记</a>
+            <div class="d-flex align-items-center">
+                <a class="navbar-brand fw-bold" href="{% url 'learning_logs:index' %}">学习笔记</a>
+                {% if user.is_authenticated %}
+                    <span class="text-light ms-2 opacity-75 small">你好, {{ user.username }}!</span>
+                {% endif %}
+            </div>
 
             <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarCollapse">
                 <span class="navbar-toggler-icon"></span>
             </button>
 
-            <div class="collapse navbar-collapse" id="navbarCollapse">
-                <ul class="navbar-nav me-auto">
+            <div class="collapse navbar-collapse bg-secondary bg-opacity-25 rounded p-lg-0 p-3 mt-2 mt-lg-0" id="navbarCollapse">
+                <ul class="navbar-nav me-auto ps-lg-3">
                     <li class="nav-item">
                         <a class="nav-link" href="{% url 'learning_logs:topics' %}">所有主题</a>
                     </li>
@@ -27,9 +32,6 @@
 
                 <ul class="navbar-nav ms-auto align-items-center">
                     {% if user.is_authenticated %}
-                        <li class="nav-item">
-                            <span class="navbar-text me-3 text-light">你好, {{ user.username }}!</span>
-                        </li>
                         <li class="nav-item">
                             <form action="{% url 'users:logout' %}" method="post">
                                 {% csrf_token %}

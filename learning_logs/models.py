@@ -23,6 +23,11 @@ class Entry(models.Model):
     text = models.TextField()
     date_added = models.DateTimeField(auto_now_add=True)
 
+    # 新增三大媒体字段
+    image = models.ImageField(upload_to='images/', blank=True, null=True, verbose_name='插入图片')
+    video = models.FileField(upload_to='videos/', blank=True, null=True, verbose_name='插入视频')
+    document = models.FileField(upload_to='documents/', blank=True, null=True, verbose_name='上传附件')
+
     class Meta:
         """这是一个特殊的内容类，用来告诉Django模型的复数拼写"""
         verbose_name_plural = 'Entries'

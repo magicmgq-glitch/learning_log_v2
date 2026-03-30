@@ -124,6 +124,10 @@ USE_TZ = True
 
 STATIC_URL = 'static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
+# 媒体文件（用户上传的图片、视频等）的基础 URL
+MEDIA_URL = '/media/'
+# 媒体文件在服务器上的绝对存储路径
+MEDIA_ROOT = BASE_DIR / 'media'
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/4.1/ref/settings/#default-auto-field
