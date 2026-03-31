@@ -37,16 +37,22 @@
                 </button>
                 <ul class="dropdown-menu dropdown-menu-end shadow-sm border-0 mt-2">
                     <li>
-                        <a class="dropdown-item fw-bold text-success py-2" href="{% url 'learning_logs:new_entry' topic.id %}">➕ 写新笔记</a>
+                        <a class="dropdown-item fw-bold text-success py-2" href="{% url 'learning_logs:new_entry' topic.id %}">
+                            <span style="display:inline-block; width: 24px; text-align: center;">➕</span> 写新笔记
+                        </a>
                     </li>
                     <li><hr class="dropdown-divider"></li>
                     <li>
-                        <a class="dropdown-item text-primary py-2" href="{% url 'learning_logs:edit_topic' topic.id %}">✎ 修改主题</a>
+                        <a class="dropdown-item text-primary py-2" href="{% url 'learning_logs:edit_topic' topic.id %}">
+                            <span style="display:inline-block; width: 24px; text-align: center;">✎</span> 修改主题
+                        </a>
                     </li>
                     <li>
                         <form action="{% url 'learning_logs:delete_topic' topic.id %}" method="post" class="m-0" onsubmit="return confirm('⚠️ 警告：这将永久删除【{{ topic.text }}】以及里面的所有笔记！\n\n确定要继续吗？');">
                             {% csrf_token %}
-                            <button type="submit" class="dropdown-item text-danger py-2">🗑 删除主题</button>
+                            <button type="submit" class="dropdown-item text-danger py-2">
+                                <span style="display:inline-block; width: 24px; text-align: center;">🗑</span> 删除主题
+                            </button>
                         </form>
                     </li>
                 </ul>
@@ -113,7 +119,10 @@
             </div>
         {% empty %}
             <div class="text-center text-muted mt-5 p-5 bg-white rounded shadow-sm">
-                还没有为这个主题写下任何笔记，开始你的第一次记录吧。
+                <p class="mb-3">还没有为这个主题写下任何笔记，开始你的第一次记录吧。</p>
+                <a href="{% url 'learning_logs:new_entry' topic.id %}" class="btn btn-success shadow-sm px-4 fw-bold">
+                    ➕ 开始写笔记
+                </a>
             </div>
         {% endfor %}
     </div>
