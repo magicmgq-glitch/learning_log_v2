@@ -15,22 +15,50 @@
     }
     </style>
     <div class="d-flex justify-content-between align-items-center mb-4 pb-2 border-bottom">
-        <h2 class="text-primary fw-bold mb-0">{{ topic.text }}</h2>
 
-        <div class="d-flex gap-2">
-            <a href="{% url 'learning_logs:edit_topic' topic.id %}" class="btn btn-sm btn-outline-primary">✎ 修改主题</a>
+        <div class="d-flex align-items-center gap-3 text-truncate">
+            <h2 class="text-primary fw-bold mb-0 text-truncate">{{ topic.text }}</h2>
 
-            <form action="{% url 'learning_logs:delete_topic' topic.id %}" method="post" onsubmit="return confirm('⚠️ 警告：这将永久删除【{{ topic.text }}】以及里面的所有笔记！\n\n确定要继续吗？');">
-                {% csrf_token %}
-                <button type="submit" class="btn btn-sm btn-outline-danger">🗑 删除主题</button>
-            </form>
+            <div class="d-none d-md-flex gap-2">
+                <a href="{% url 'learning_logs:edit_topic' topic.id %}" class="btn btn-sm btn-outline-primary">✎ 修改主题</a>
+
+                <form action="{% url 'learning_logs:delete_topic' topic.id %}" method="post" class="m-0" onsubmit="return confirm('⚠️ 警告：这将永久删除【{{ topic.text }}】以及里面的所有笔记！\n\n确定要继续吗？');">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-sm btn-outline-danger">🗑 删除主题</button>
+                </form>
+            </div>
         </div>
-    </div>
 
-    <div class="d-flex justify-content-start justify-content-md-end mb-4">
-        <a href="{% url 'learning_logs:new_entry' topic.id %}" class="btn btn-success shadow-sm px-4 fw-bold">
-            ➕ 写新笔记
-        </a>
+        <div class="d-flex align-items-center">
+
+            <div class="dropdown d-md-none">
+                <button class="btn btn-outline-secondary btn-sm px-2 border-0 shadow-sm" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                    <span class="fs-5 lh-1">☰</span>
+                </button>
+                <ul class="dropdown-menu dropdown-menu-end shadow-sm border-0 mt-2">
+                    <li>
+                        <a class="dropdown-item fw-bold text-success py-2" href="{% url 'learning_logs:new_entry' topic.id %}">➕ 写新笔记</a>
+                    </li>
+                    <li><hr class="dropdown-divider"></li>
+                    <li>
+                        <a class="dropdown-item text-primary py-2" href="{% url 'learning_logs:edit_topic' topic.id %}">✎ 修改主题</a>
+                    </li>
+                    <li>
+                        <form action="{% url 'learning_logs:delete_topic' topic.id %}" method="post" class="m-0" onsubmit="return confirm('⚠️ 警告：这将永久删除【{{ topic.text }}】以及里面的所有笔记！\n\n确定要继续吗？');">
+                            {% csrf_token %}
+                            <button type="submit" class="dropdown-item text-danger py-2">🗑 删除主题</button>
+                        </form>
+                    </li>
+                </ul>
+            </div>
+
+            <div class="d-none d-md-block">
+                <a href="{% url 'learning_logs:new_entry' topic.id %}" class="btn btn-success shadow-sm px-4 fw-bold">
+                    ➕ 写新笔记
+                </a>
+            </div>
+
+        </div>
     </div>
 
     <div class="mb-5">

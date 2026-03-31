@@ -35,7 +35,10 @@
                             </div>
                         </details>
 
-                        {% bootstrap_button button_type="submit" content="添加条目" button_class="btn-primary" %}
+                        <div class="d-flex gap-2 mt-3">
+                            {% bootstrap_button button_type="submit" content="添加笔记" button_class="btn-primary" %}
+                            <a href="{% url 'learning_logs:topic' topic.id %}" class="btn btn-outline-secondary">放弃添加</a>
+                        </div>
                     </form>
 
                 </div>
