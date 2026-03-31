@@ -10,44 +10,41 @@
 </head>
 <body class="bg-light">
 
-    <nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-4 shadow-sm">
+    <nav class="navbar navbar-light bg-light mb-4 border-bottom shadow-sm">
         <div class="container">
+
             <div class="d-flex align-items-center">
-                <a class="navbar-brand fw-bold" href="{% url 'learning_logs:index' %}">学习笔记</a>
-                {% if user.is_authenticated %}
-                    <span class="text-light ms-2 opacity-75 small">你好, {{ user.username }}!</span>
-                {% endif %}
-            </div>
+                <a class="navbar-brand fs-4 fw-bold text-primary mb-0" href="{% url 'learning_logs:index' %}">
+                    学习笔记
+                </a>
 
-            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarCollapse">
-                <span class="navbar-toggler-icon"></span>
-            </button>
-
-            <div class="collapse navbar-collapse bg-secondary bg-opacity-25 rounded p-lg-0 p-3 mt-2 mt-lg-0" id="navbarCollapse">
-                <ul class="navbar-nav me-auto ps-lg-3">
+                <ul class="navbar-nav ms-3 mb-0 d-none d-md-flex flex-row gap-3">
                     <li class="nav-item">
                         <a class="nav-link" href="{% url 'learning_logs:topics' %}">所有主题</a>
                     </li>
                 </ul>
-
-                <ul class="navbar-nav ms-auto align-items-center">
-                    {% if user.is_authenticated %}
-                        <li class="nav-item">
-                            <form action="{% url 'users:logout' %}" method="post">
-                                {% csrf_token %}
-                                <button type="submit" class="btn btn-outline-light btn-sm mt-1">注销</button>
-                            </form>
-                        </li>
-                    {% else %}
-                        <li class="nav-item">
-                            <a class="nav-link" href="{% url 'users:register' %}">注册</a>
-                        </li>
-                        <li class="nav-item ms-2">
-                            <a class="btn btn-primary btn-sm" href="{% url 'users:login' %}">登录</a>
-                        </li>
-                    {% endif %}
-                </ul>
             </div>
+
+            <div class="d-flex align-items-center gap-2">
+                {% if user.is_authenticated %}
+
+                    <span class="navbar-text d-none d-md-inline-block me-3 text-muted">
+                        你好, <strong>{{ user.username }}</strong>
+                    </span>
+
+                    <form action="{% url 'users:logout' %}" method="post" class="m-0">
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-sm btn-outline-secondary px-3">注销</button>
+                    </form>
+
+                {% else %}
+
+                    <a href="{% url 'users:register' %}" class="btn btn-sm btn-outline-primary px-3">注册</a>
+                    <a href="{% url 'users:login' %}" class="btn btn-sm btn-primary px-3 shadow-sm">登录</a>
+
+                {% endif %}
+            </div>
+
         </div>
     </nav>
 
