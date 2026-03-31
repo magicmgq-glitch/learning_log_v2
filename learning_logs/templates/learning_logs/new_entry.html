@@ -51,13 +51,12 @@
         document.addEventListener("DOMContentLoaded", function() {
 
             // ==========================================
-            // 【第一部分：V2.0 的 50MB 限制与取消按钮代码】
+            // 【第一部分：视频 500M 与 附件 10M 精细化拦截限制】
             // ==========================================
-            const MAX_MB = 50;
-            const MAX_BYTES = MAX_MB * 1024 * 1024;
             const fileInputs = document.querySelectorAll('input[type="file"]');
 
             fileInputs.forEach(function(input) {
+                // 生成取消按钮
                 const clearBtn = document.createElement('button');
                 clearBtn.type = 'button';
                 clearBtn.className = 'btn btn-sm btn-outline-danger mt-2 mb-3 d-block';
@@ -69,9 +68,20 @@
                 input.addEventListener('change', function() {
                     if (this.files.length > 0) {
                         const fileSize = this.files[0].size;
-                        if (fileSize > MAX_BYTES) {
-                            alert('哎呀，文件太大了！当前文件大小约 ' + (fileSize / 1024 / 1024).toFixed(2) + 'MB。\n为保证速度，最大只支持 ' + MAX_MB + 'MB，请重新选择。');
-                            this.value = '';
+
+                        // 💥 核心魔法：判断当前是哪个输入框！
+                        // Django 默认生成的视频框 name 叫 'video'，附件框叫 'document'
+                        let maxMb = 10; // 默认给附件设置 10MB 限制
+                        if (this.name === 'video') {
+                            maxMb = 500; // 如果发现是视频框，立马提额到 500MB
+                        }
+
+                        const maxBytes = maxMb * 1024 * 1024;
+
+                        // 进行大小校验
+                        if (fileSize > maxBytes) {
+                            alert('哎呀，文件太大了！当前文件大小约 ' + (fileSize / 1024 / 1024).toFixed(2) + 'MB。\n当前类型文件最大只支持 ' + maxMb + 'MB，请重新选择。');
+                            this.value = ''; // 清空选择
                             clearBtn.style.display = 'none';
                         } else {
                             clearBtn.style.display = 'inline-block';
@@ -104,6 +114,8 @@
                     element: textArea,
                     uploadImage: true,
 
+                    // 💥 核心修改：将图片上传最大限制改为 10MB (10 * 2560 * 1440 字节)
+                    imageMaxSize: 2560 * 1440 * 10,
                     // 【核心修改】：自己接管上传逻辑，完美适配 Django 后端
                     imageUploadFunction: function(file, onSuccess, onError) {
                         // 打包图片数据
