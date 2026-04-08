@@ -11,6 +11,7 @@ https://docs.djangoproject.com/en/4.1/ref/settings/
 """
 
 from pathlib import Path
+from datetime import timedelta
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -37,6 +38,7 @@ INSTALLED_APPS = [
     'markdownify',    # 引入 Markdown 渲染插件
     'django_bootstrap5',   # 引入 Bootstrap 魔法
     'django_cleanup.apps.CleanupConfig',
+    'rest_framework',
 
     # Django默认自带的应用程序
     'django.contrib.admin',
@@ -129,6 +131,10 @@ STATIC_ROOT = BASE_DIR / 'staticfiles'
 MEDIA_URL = '/media/'
 # 媒体文件在服务器上的绝对存储路径
 MEDIA_ROOT = BASE_DIR / 'media'
+# 上传大小限制（后端兜底，单位：字节）
+IMAGE_UPLOAD_MAX_BYTES = 5 * 1024 * 1024
+VIDEO_UPLOAD_MAX_BYTES = 500 * 1024 * 1024
+DOCUMENT_UPLOAD_MAX_BYTES = 10 * 1024 * 1024
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/4.1/ref/settings/#default-auto-field
@@ -179,3 +185,16 @@ LOGIN_URL = 'users:login'
 
 # 告诉 Django，用户点击注销（登出）后，跳回哪个页面（这里指跳回主页 index）
 LOGOUT_REDIRECT_URL = 'learning_logs:index'
+
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': (
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
+        'rest_framework.authentication.SessionAuthentication',
+    ),
+}
+
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=30),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
+    'AUTH_HEADER_TYPES': ('Bearer',),
+}

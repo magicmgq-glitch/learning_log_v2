@@ -5,6 +5,7 @@ from django.http import Http404
 from django.shortcuts import render, redirect
 from .models import Topic, Entry
 from .forms import TopicForm, EntryForm  # 导入我们刚才写的表单
+from .upload_limits import image_upload_max_bytes, image_upload_max_mb, is_file_too_large
 
 # Create your views here.
 def index(request):
@@ -129,22 +130,31 @@ def upload_image(request):
     专门给 Markdown 编辑器提供图片无刷新上传的后端 API 接口。
     只接收 POST 请求中的 image 文件，返回 JSON 格式的图片网址。
     """
-    if request.method == 'POST' and request.FILES.get('image'):
-        upload = request.FILES['image']
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Only POST method is allowed.'}, status=405)
 
-        # 1. 使用 Django 默认的文件存储系统，把图片存入 media/editor/ 文件夹
-        # 这里用了一个 f-string 拼接路径，防止图片名字冲突可以加点时间戳，但目前保持简单
-        filename = default_storage.save(f"editor/{upload.name}", upload)
+    upload = request.FILES.get('image')
+    if not upload:
+        return JsonResponse({'error': 'Image file is required.'}, status=400)
+    if is_file_too_large(upload, image_upload_max_bytes()):
+        return JsonResponse(
+            {'error': f'Image file exceeds {image_upload_max_mb()}MB limit.'},
+            status=400,
+        )
 
-        # 2. 获取这张图片在服务器上的绝对网络地址
-        image_url = default_storage.url(filename)
+    # 1. 使用 Django 默认的文件存储系统，把图片存入 media/editor/ 文件夹
+    # 这里用了一个 f-string 拼接路径，防止图片名字冲突可以加点时间戳，但目前保持简单
+    filename = default_storage.save(f"editor/{upload.name}", upload)
 
-        # 3. 极其关键：按照前端编辑器要求的固定格式，返回 JSON 密码本
-        return JsonResponse({
-            'data': {
-                'filePath': image_url
-            }
-        })
+    # 2. 获取这张图片在服务器上的绝对网络地址
+    image_url = default_storage.url(filename)
+
+    # 3. 极其关键：按照前端编辑器要求的固定格式，返回 JSON 密码本
+    return JsonResponse({
+        'data': {
+            'filePath': image_url
+        }
+    })
 
     # ==========================================
     # V3.0 新增：修改与删除功能
@@ -199,6 +209,3 @@ def delete_entry(request, entry_id):
 
     # 删除笔记后，留在当前主题页面
     return redirect('learning_logs:topic', topic_id=topic.id)
-
-    # 如果上传失败，返回错误状态码 400
-    return JsonResponse({'error': '上传失败'}, status=400)

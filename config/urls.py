@@ -17,9 +17,20 @@ from django.contrib import admin
 from django.urls import path, include
 from django.conf import settings  # 新增
 from django.conf.urls.static import static  # 新增
+from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
+
+from users.api_views import current_user, register_api
 
 urlpatterns = [
     path('admin/', admin.site.urls),
+    path('api/v1/auth/register/', register_api, name='register_api'),
+    path('api/v1/auth/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
+    path('api/v1/auth/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
+    path('api/v1/auth/me/', current_user, name='current_user'),
+    path(
+        'api/v1/',
+        include(('learning_logs.api_urls', 'learning_logs_api'), namespace='learning_logs_api'),
+    ),
     # 凡是加上了 users/ 前缀的网址，统统交给 users 部门处理
     path('users/', include('users.urls')),
     # 新增下面这行：如果是空路径（主页），就转交给learning_logs的urls处理

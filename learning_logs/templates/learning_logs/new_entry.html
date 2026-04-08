@@ -21,14 +21,17 @@
 
                         <details class="mb-4 mt-2">
                             <summary class="text-muted" style="cursor: pointer; user-select: none;">
-                                添加视频或附件 (可选)
+                                添加图片、视频或附件 (可选)
                             </summary>
                             <div class="card card-body bg-light mt-2 border-0 shadow-sm">
                                 <div class="row">
-                                    <div class="col-md-6">
+                                    <div class="col-md-4">
+                                        {% bootstrap_field form.image %}
+                                    </div>
+                                    <div class="col-md-4">
                                         {% bootstrap_field form.video %}
                                     </div>
-                                    <div class="col-md-6">
+                                    <div class="col-md-4">
                                         {% bootstrap_field form.document %}
                                     </div>
                                 </div>
@@ -51,7 +54,7 @@
         document.addEventListener("DOMContentLoaded", function() {
 
             // ==========================================
-            // 【第一部分：视频 500M 与 附件 10M 精细化拦截限制】
+            // 【第一部分：图片 5M、附件 10M、视频 500M 精细化拦截限制】
             // ==========================================
             const fileInputs = document.querySelectorAll('input[type="file"]');
 
@@ -70,8 +73,11 @@
                         const fileSize = this.files[0].size;
 
                         // 💥 核心魔法：判断当前是哪个输入框！
-                        // Django 默认生成的视频框 name 叫 'video'，附件框叫 'document'
+                        // Django 默认输入框名字：image / video / document
                         let maxMb = 10; // 默认给附件设置 10MB 限制
+                        if (this.name === 'image') {
+                            maxMb = 5; // 图片限制 5MB
+                        }
                         if (this.name === 'video') {
                             maxMb = 500; // 如果发现是视频框，立马提额到 500MB
                         }
@@ -114,8 +120,8 @@
                     element: textArea,
                     uploadImage: true,
 
-                    // 💥 核心修改：将图片上传最大限制改为 10MB (10 * 2560 * 1440 字节)
-                    imageMaxSize: 2560 * 1440 * 10,
+                    // 图片上传大小上限：5MB（与后端保持一致）
+                    imageMaxSize: 5 * 1024 * 1024,
                     // 【核心修改】：自己接管上传逻辑，完美适配 Django 后端
                     imageUploadFunction: function(file, onSuccess, onError) {
                         // 打包图片数据
@@ -136,7 +142,7 @@
                         })
                         .then(data => {
                             if (data.error) {
-                                onError(data.error); // 后端报错
+                                onError('图片上传失败，请确认图片不超过 5MB 后重试。');
                             } else {
                                 onSuccess(data.data.filePath); // 成功，把网址交给编辑器
                             }
