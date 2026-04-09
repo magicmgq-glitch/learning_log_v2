@@ -203,7 +203,9 @@ def replace_storage_file(storage_path, content):
 
     if default_storage.exists(normalized_path):
         default_storage.delete(normalized_path)
+        logger.warning('Deleted original video before replace: %s', normalized_path)
     default_storage.save(normalized_path, content)
+    logger.warning('Saved processed video to storage: %s', normalized_path)
     return True
 
 
@@ -219,11 +221,13 @@ def transcode_storage_video_in_place(storage_path):
         output_path = tmp_path / f'output{source_suffix}'
 
         write_storage_to_file(normalized_path, input_path)
+        processed_by = 'remux'
 
         try:
             remux_video(input_path, output_path)
         except Exception as remux_error:
             logger.warning('Storage remux failed for %s, fallback to transcode: %s', normalized_path, remux_error)
+            processed_by = 'transcode'
             try:
                 transcode_video(input_path, output_path)
             except Exception as transcode_error:
@@ -231,7 +235,10 @@ def transcode_storage_video_in_place(storage_path):
                 return False
 
         output_content = ContentFile(output_path.read_bytes())
-        return replace_storage_file(normalized_path, output_content)
+        replaced = replace_storage_file(normalized_path, output_content)
+        if replaced:
+            logger.warning('Video background processing succeeded (%s): %s', processed_by, normalized_path)
+        return replaced
 
 
 def _transcode_storage_video_job(storage_path):
@@ -252,6 +259,7 @@ def enqueue_video_transcode(storage_path):
 
     with _PENDING_TRANSCODE_LOCK:
         if normalized_path in _PENDING_TRANSCODE_PATHS:
+            logger.warning('Video transcode already queued, skip duplicate: %s', normalized_path)
             return False
         _PENDING_TRANSCODE_PATHS.add(normalized_path)
 
@@ -262,21 +270,26 @@ def enqueue_video_transcode(storage_path):
             _PENDING_TRANSCODE_PATHS.discard(normalized_path)
         logger.exception('Failed to enqueue video transcode: %s', normalized_path)
         return False
+    logger.warning('Enqueued video for background processing: %s', normalized_path)
     return True
 
 
 def save_video_and_enqueue_transcode(uploaded_file, directory):
     filename = save_uploaded_video_original(uploaded_file, directory)
+    logger.warning('Uploaded original video saved: %s', filename)
     enqueue_video_transcode(filename)
     return filename
 
 
 def attach_video_and_enqueue_transcode(entry, uploaded_file):
     if entry.video:
+        old_video = entry.video.name
         entry.video.delete(save=False)
+        logger.warning('Deleted previous entry video before replace: %s', old_video)
     filename = save_uploaded_video_original(uploaded_file, 'videos')
     entry.video.name = filename
     entry.save(update_fields=['video'])
+    logger.warning('Uploaded original entry video saved: %s', filename)
     enqueue_video_transcode(filename)
     return filename
 
