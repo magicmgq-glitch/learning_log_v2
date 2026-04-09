@@ -1,9 +1,13 @@
 import json
+import tempfile
+from io import BytesIO
+from pathlib import Path
 
 from django.contrib.auth.models import User
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import Client, TestCase, override_settings
 from django.urls import reverse
+from PIL import Image
 
 from .models import Entry, Topic
 
@@ -374,31 +378,33 @@ class JwtAuthTests(TestCase):
         self.assertTrue(Topic.objects.filter(text='No CSRF needed', owner=self.user).exists())
 
     def test_upload_markdown_image_with_bearer_token(self):
-        token_response = self.client.post(
-            reverse('token_obtain_pair'),
-            data={'username': 'alice', 'password': 'secret123'},
-            content_type='application/json',
-        )
-        access = token_response.json()['access']
+        with tempfile.TemporaryDirectory() as media_dir:
+            with self.settings(MEDIA_ROOT=media_dir, MEDIA_URL='/media/'):
+                token_response = self.client.post(
+                    reverse('token_obtain_pair'),
+                    data={'username': 'alice', 'password': 'secret123'},
+                    content_type='application/json',
+                )
+                access = token_response.json()['access']
 
-        gif_data = (
-            b'GIF89a\x01\x00\x01\x00\x80\x00\x00\x00\x00\x00\xff\xff\xff!'
-            b'\xf9\x04\x01\n\x00\x01\x00,\x00\x00\x00\x00\x01\x00\x01\x00'
-            b'\x00\x02\x02L\x01\x00;'
-        )
-        upload = SimpleUploadedFile('inline.gif', gif_data, content_type='image/gif')
+                gif_data = (
+                    b'GIF89a\x01\x00\x01\x00\x80\x00\x00\x00\x00\x00\xff\xff\xff!'
+                    b'\xf9\x04\x01\n\x00\x01\x00,\x00\x00\x00\x00\x01\x00\x01\x00'
+                    b'\x00\x02\x02L\x01\x00;'
+                )
+                upload = SimpleUploadedFile('inline.gif', gif_data, content_type='image/gif')
 
-        response = self.client.post(
-            reverse('learning_logs_api:upload_markdown_image'),
-            data={'image': upload},
-            headers={'Authorization': f'Bearer {access}'},
-        )
+                response = self.client.post(
+                    reverse('learning_logs_api:upload_markdown_image'),
+                    data={'image': upload},
+                    headers={'Authorization': f'Bearer {access}'},
+                )
 
-        self.assertEqual(response.status_code, 201)
-        payload = response.json()
-        self.assertIn('data', payload)
-        self.assertIn('filePath', payload['data'])
-        self.assertTrue(payload['data']['filePath'].startswith('http'))
+                self.assertEqual(response.status_code, 201)
+                payload = response.json()
+                self.assertIn('data', payload)
+                self.assertIn('filePath', payload['data'])
+                self.assertTrue(payload['data']['filePath'].startswith('http'))
 
     @override_settings(IMAGE_UPLOAD_MAX_BYTES=16)
     def test_upload_markdown_image_rejects_oversized_file(self):
@@ -423,6 +429,84 @@ class JwtAuthTests(TestCase):
 
         self.assertEqual(response.status_code, 400)
         self.assertIn('Image file exceeds', response.json()['error'])
+
+
+class ImagePreviewApiTests(TestCase):
+    def setUp(self):
+        self.media_dir = tempfile.TemporaryDirectory()
+        self.media_override = override_settings(
+            MEDIA_ROOT=self.media_dir.name,
+            MEDIA_URL='/media/',
+        )
+        self.media_override.enable()
+
+        self.user = User.objects.create_user(username='alice', password='secret123')
+        self.topic = Topic.objects.create(text='Python', owner=self.user)
+
+    def tearDown(self):
+        self.media_override.disable()
+        self.media_dir.cleanup()
+
+    def test_image_preview_returns_resized_jpeg_for_entry_image(self):
+        upload = SimpleUploadedFile(
+            'note.png',
+            self.make_image_bytes(size=(2400, 1800), image_format='PNG'),
+            content_type='image/png',
+        )
+        entry = Entry.objects.create(topic=self.topic, text='with image', image=upload)
+
+        response = self.client.get(
+            reverse('learning_logs_api:image_preview'),
+            {'url': f'http://testserver{entry.image.url}', 'size': 'card'},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response['Content-Type'], 'image/jpeg')
+        response_body = b''.join(response.streaming_content)
+
+        with Image.open(BytesIO(response_body)) as image:
+            self.assertLessEqual(max(image.size), 720)
+
+        preview_file = (
+            Path(self.media_dir.name)
+            / 'previews'
+            / 'card'
+            / 'images'
+            / 'note-png.jpg'
+        )
+        self.assertTrue(preview_file.exists())
+
+    def test_image_preview_supports_editor_markdown_images(self):
+        editor_dir = Path(self.media_dir.name) / 'editor'
+        editor_dir.mkdir(parents=True, exist_ok=True)
+        source_path = editor_dir / 'inline.jpg'
+        source_path.write_bytes(self.make_image_bytes(size=(1800, 1200), image_format='JPEG'))
+
+        response = self.client.get(
+            reverse('learning_logs_api:image_preview'),
+            {'url': 'http://testserver/media/editor/inline.jpg', 'size': 'detail'},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response['Content-Type'], 'image/jpeg')
+        response_body = b''.join(response.streaming_content)
+
+        with Image.open(BytesIO(response_body)) as image:
+            self.assertLessEqual(max(image.size), 1600)
+
+    def test_image_preview_rejects_non_media_urls(self):
+        response = self.client.get(
+            reverse('learning_logs_api:image_preview'),
+            {'url': 'http://example.com/not-allowed.jpg', 'size': 'card'},
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()['error'], 'Valid media image URL is required.')
+
+    def make_image_bytes(self, size, image_format):
+        buffer = BytesIO()
+        Image.new('RGB', size, color=(120, 180, 220)).save(buffer, format=image_format)
+        return buffer.getvalue()
 
     def test_upload_markdown_video_with_bearer_token(self):
         token_response = self.client.post(

@@ -9,6 +9,7 @@ urlpatterns = [
     path('topics/<int:topic_id>/', api_views.topic_detail, name='topic_detail'),
     path('topics/<int:topic_id>/entries/', api_views.entry_list, name='entry_list'),
     path('entries/<int:entry_id>/', api_views.entry_detail, name='entry_detail'),
+    path('media/image-preview/', api_views.image_preview, name='image_preview'),
     path('uploads/images/', api_views.upload_markdown_image, name='upload_markdown_image'),
     path('uploads/videos/', api_views.upload_markdown_video, name='upload_markdown_video'),
 ]

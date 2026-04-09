@@ -4,12 +4,18 @@ from pathlib import Path
 from uuid import uuid4
 
 from django.core.files.storage import default_storage
-from django.http import JsonResponse
+from django.http import FileResponse, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
 
+from .image_previews import (
+    ensure_image_preview,
+    media_relative_path_from_url_or_path,
+    preview_max_dimension,
+    resolve_media_path,
+)
 from .models import Entry, Topic
 from .upload_limits import (
     document_upload_max_bytes,
@@ -174,6 +180,28 @@ def upload_markdown_video(request):
         },
         status=201,
     )
+
+
+@require_http_methods(['GET'])
+def image_preview(request):
+    raw_url = request.GET.get('url') or request.GET.get('path')
+    size = request.GET.get('size') or 'detail'
+    relative_path = media_relative_path_from_url_or_path(raw_url)
+    if not relative_path:
+        return JsonResponse({'error': 'Valid media image URL is required.'}, status=400)
+
+    preview_relative = ensure_image_preview(relative_path, size=size)
+    if not preview_relative:
+        return JsonResponse({'error': 'Image preview not found.'}, status=404)
+
+    preview_path = resolve_media_path(preview_relative)
+    if not preview_path or not preview_path.exists():
+        return JsonResponse({'error': 'Image preview not found.'}, status=404)
+
+    response = FileResponse(preview_path.open('rb'), content_type='image/jpeg')
+    response['Cache-Control'] = 'public, max-age=86400'
+    response['X-Preview-Max-Dimension'] = str(preview_max_dimension(size))
+    return response
 
 
 @csrf_exempt

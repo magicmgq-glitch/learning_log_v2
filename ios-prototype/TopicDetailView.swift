@@ -1,5 +1,7 @@
+import AVFoundation
 import AVKit
 import Foundation
+import ImageIO
 import PhotosUI
 import QuickLook
 import SwiftUI
@@ -515,33 +517,14 @@ private struct EntryContentBody: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            MarkdownContentView(markdown: entry.text)
+            MarkdownContentView(markdown: entry.text, autoplayVideos: true)
 
             if let imageURL = URL(string: entry.imageURL ?? "") {
-                AsyncImage(url: imageURL) { phase in
-                    switch phase {
-                    case .empty:
-                        ProgressView()
-                            .frame(maxWidth: .infinity, minHeight: 120)
-                    case .success(let image):
-                        image
-                            .resizable()
-                            .scaledToFit()
-                            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                    case .failure:
-                        Text("图片加载失败")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .frame(maxWidth: .infinity, minHeight: 90)
-                    @unknown default:
-                        EmptyView()
-                    }
-                }
-                .frame(maxWidth: .infinity)
+                DetailRemoteImageView(url: imageURL)
             }
 
             if let videoURL = URL(string: entry.videoURL ?? "") {
-                InlineVideoPlayer(url: videoURL)
+                InlineVideoPlayer(url: videoURL, autoplay: true)
                     .frame(maxWidth: .infinity)
             }
 
@@ -571,22 +554,9 @@ private struct EntryPreviewMediaView: View {
             Group {
                 switch summary.primaryMedia {
                 case .some(.image(let imageURL)):
-                    AsyncImage(url: imageURL) { phase in
-                        switch phase {
-                        case .empty:
-                            previewPlaceholder
-                        case .success(let image):
-                            image
-                                .resizable()
-                                .scaledToFill()
-                        case .failure:
-                            previewFallback(icon: "photo", text: "图片预览失败")
-                        @unknown default:
-                            previewPlaceholder
-                        }
-                    }
-                case .some(.video(_)):
-                    previewFallback(icon: "video.fill", text: "视频笔记，点击查看详情")
+                    EntryPreviewImageView(url: imageURL)
+                case .some(.video(let videoURL)):
+                    EntryVideoThumbnailView(url: videoURL)
                 case .none:
                     previewFallback(icon: "text.alignleft", text: summary.body)
                 }
@@ -601,7 +571,7 @@ private struct EntryPreviewMediaView: View {
             }
         }
         .frame(maxWidth: .infinity)
-        .aspectRatio(16 / 9, contentMode: .fit)
+        .frame(height: entryPreviewMediaHeight())
         .background(Color(.tertiarySystemGroupedBackground))
         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
@@ -611,6 +581,7 @@ private struct EntryPreviewMediaView: View {
             Color(.tertiarySystemGroupedBackground)
             ProgressView()
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private func previewFallback(icon: String, text: String) -> some View {
@@ -631,8 +602,253 @@ private struct EntryPreviewMediaView: View {
     }
 }
 
+private final class MediaPreviewCache {
+    static let shared = MediaPreviewCache()
+
+    let imageCache = NSCache<NSURL, UIImage>()
+    let detailImageCache = NSCache<NSURL, UIImage>()
+    let videoThumbnailCache = NSCache<NSURL, UIImage>()
+
+    private init() {
+        imageCache.countLimit = 120
+        detailImageCache.countLimit = 80
+        videoThumbnailCache.countLimit = 120
+    }
+}
+
+private struct EntryPreviewImageView: View {
+    let url: URL
+
+    @State private var image: UIImage?
+    @State private var hasFailed = false
+
+    var body: some View {
+        Group {
+            if let image {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(Color(.tertiarySystemGroupedBackground))
+            } else if hasFailed {
+                fallback
+            } else {
+                loadingPlaceholder
+            }
+        }
+        .task(id: url) {
+            await loadImage()
+        }
+    }
+
+    private var loadingPlaceholder: some View {
+        ZStack {
+            Color(.tertiarySystemGroupedBackground)
+            ProgressView()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var fallback: some View {
+        VStack(spacing: 8) {
+            Image(systemName: "photo")
+                .font(.title3)
+                .foregroundStyle(.secondary)
+            Text("图片预览失败")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(.tertiarySystemGroupedBackground))
+    }
+
+    private func loadImage() async {
+        let key = url as NSURL
+        if let cached = MediaPreviewCache.shared.imageCache.object(forKey: key) {
+            image = cached
+            return
+        }
+
+        do {
+            let data = try await loadImageData(
+                originalURL: url,
+                previewURL: projectImagePreviewURL(for: url, size: .card)
+            )
+            if let downsampled = downsampledPreviewImage(from: data, maxPixelSize: 900) {
+                MediaPreviewCache.shared.imageCache.setObject(downsampled, forKey: key)
+                image = downsampled
+            } else {
+                hasFailed = true
+            }
+        } catch {
+            hasFailed = true
+        }
+    }
+}
+
+private struct EntryVideoThumbnailView: View {
+    let url: URL
+
+    @State private var thumbnail: UIImage?
+    @State private var hasFailed = false
+
+    var body: some View {
+        Group {
+            if let thumbnail {
+                Image(uiImage: thumbnail)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(Color(.tertiarySystemGroupedBackground))
+            } else if hasFailed {
+                fallback
+            } else {
+                loadingPlaceholder
+            }
+        }
+        .task(id: url) {
+            await loadThumbnail()
+        }
+    }
+
+    private var loadingPlaceholder: some View {
+        ZStack {
+            Color(.tertiarySystemGroupedBackground)
+            ProgressView()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var fallback: some View {
+        VStack(spacing: 8) {
+            Image(systemName: "video")
+                .font(.title3)
+                .foregroundStyle(.secondary)
+            Text("视频预览")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(.tertiarySystemGroupedBackground))
+    }
+
+    private func loadThumbnail() async {
+        let key = url as NSURL
+        if let cached = MediaPreviewCache.shared.videoThumbnailCache.object(forKey: key) {
+            thumbnail = cached
+            return
+        }
+
+        let asset = AVURLAsset(url: url)
+        let generator = AVAssetImageGenerator(asset: asset)
+        generator.appliesPreferredTrackTransform = true
+        generator.maximumSize = CGSize(width: 960, height: 540)
+        let captureTime = CMTime(seconds: 0.2, preferredTimescale: 600)
+
+        do {
+            let cgImage = try await withCheckedThrowingContinuation { continuation in
+                generator.generateCGImagesAsynchronously(forTimes: [NSValue(time: captureTime)]) { _, image, _, result, error in
+                    switch result {
+                    case .succeeded:
+                        if let image {
+                            continuation.resume(returning: image)
+                        } else {
+                            continuation.resume(throwing: APIError.invalidResponse)
+                        }
+                    case .failed, .cancelled:
+                        continuation.resume(throwing: error ?? APIError.invalidResponse)
+                    @unknown default:
+                        continuation.resume(throwing: APIError.invalidResponse)
+                    }
+                }
+            }
+            let generatedThumbnail = UIImage(cgImage: cgImage)
+            MediaPreviewCache.shared.videoThumbnailCache.setObject(generatedThumbnail, forKey: key)
+            thumbnail = generatedThumbnail
+        } catch {
+            hasFailed = true
+        }
+    }
+}
+
+private struct DetailRemoteImageView: View {
+    let url: URL
+
+    @State private var image: UIImage?
+    @State private var hasFailed = false
+
+    var body: some View {
+        Group {
+            if let image {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .background(Color(.tertiarySystemGroupedBackground))
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            } else if hasFailed {
+                fallback
+            } else {
+                loadingPlaceholder
+            }
+        }
+        .task(id: url) {
+            await loadImage()
+        }
+    }
+
+    private var loadingPlaceholder: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color(.tertiarySystemGroupedBackground))
+            ProgressView()
+        }
+        .frame(maxWidth: .infinity)
+        .frame(minHeight: 180)
+    }
+
+    private var fallback: some View {
+        VStack(spacing: 8) {
+            Image(systemName: "photo")
+                .font(.title3)
+                .foregroundStyle(.secondary)
+            Text("图片加载失败")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+        .frame(minHeight: 180)
+        .background(Color(.tertiarySystemGroupedBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+
+    private func loadImage() async {
+        let key = url as NSURL
+        if let cached = MediaPreviewCache.shared.detailImageCache.object(forKey: key) {
+            image = cached
+            return
+        }
+
+        do {
+            let data = try await loadImageData(
+                originalURL: url,
+                previewURL: projectImagePreviewURL(for: url, size: .detail)
+            )
+            if let downsampled = downsampledPreviewImage(from: data, maxPixelSize: 1800) {
+                MediaPreviewCache.shared.detailImageCache.setObject(downsampled, forKey: key)
+                image = downsampled
+            } else {
+                hasFailed = true
+            }
+        } catch {
+            hasFailed = true
+        }
+    }
+}
+
 private struct MarkdownContentView: View {
     let markdown: String
+    var autoplayVideos = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -644,6 +860,15 @@ private struct MarkdownContentView: View {
 
     private var parsedBlocks: [MarkdownBlock] {
         parseMarkdownBlocks(from: normalizedMarkdownForDisplay(markdown))
+    }
+
+    private var firstVideoOffset: Int? {
+        parsedBlocks.firstIndex { block in
+            if case .video = block {
+                return true
+            }
+            return false
+        }
     }
 
     @ViewBuilder
@@ -676,32 +901,23 @@ private struct MarkdownContentView: View {
             .padding(.vertical, 4)
             .frame(maxWidth: .infinity, alignment: .leading)
         case .image(let url):
-            AsyncImage(url: url) { phase in
-                switch phase {
-                case .empty:
-                    ProgressView()
-                        .frame(maxWidth: .infinity, minHeight: 120)
-                case .success(let image):
-                    image
-                        .resizable()
-                        .scaledToFit()
-                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                case .failure:
-                    Text("Markdown 图片加载失败")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, minHeight: 90)
-                @unknown default:
-                    EmptyView()
-                }
-            }
+            DetailRemoteImageView(url: url)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 4)
         case .video(let url):
-            InlineVideoPlayer(url: url)
+            InlineVideoPlayer(
+                url: url,
+                autoplay: autoplayVideos && isFirstVideoURL(url)
+            )
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 4)
         }
+    }
+
+    private func isFirstVideoURL(_ url: URL) -> Bool {
+        guard let firstVideoOffset else { return false }
+        guard case .video(let firstURL) = parsedBlocks[firstVideoOffset] else { return false }
+        return firstURL == url
     }
 
     @ViewBuilder
@@ -908,9 +1124,15 @@ private final class VideoPlaybackCoordinator {
 
 private struct InlineVideoPlayer: View {
     let url: URL
+    var autoplay = false
     @State private var player: AVPlayer?
     @State private var statusObservation: NSKeyValueObservation?
+    @State private var itemStatusObservation: NSKeyValueObservation?
+    @State private var keepUpObservation: NSKeyValueObservation?
+    @State private var playbackStalledObserver: NSObjectProtocol?
+    @State private var shouldResumeAfterStall = false
     @State private var showFullscreen = false
+    @State private var pendingAutoplay = false
 
     var body: some View {
         ZStack(alignment: .topTrailing) {
@@ -930,13 +1152,27 @@ private struct InlineVideoPlayer: View {
         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         .onAppear {
             if player == nil {
-                player = AVPlayer(url: url)
+                player = makeOptimizedPlayer(for: url)
             }
+            pendingAutoplay = autoplay
             attachPlaybackObserverIfNeeded()
+            attachItemStatusObserverIfNeeded()
+            attachRecoveryObserverIfNeeded()
+            attemptAutoplayIfPossible()
         }
         .onDisappear {
             statusObservation?.invalidate()
             statusObservation = nil
+            itemStatusObservation?.invalidate()
+            itemStatusObservation = nil
+            keepUpObservation?.invalidate()
+            keepUpObservation = nil
+            if let playbackStalledObserver {
+                NotificationCenter.default.removeObserver(playbackStalledObserver)
+                self.playbackStalledObserver = nil
+            }
+            shouldResumeAfterStall = false
+            pendingAutoplay = false
             player?.pause()
             VideoPlaybackCoordinator.shared.clearIfActive(player)
         }
@@ -956,6 +1192,71 @@ private struct InlineVideoPlayer: View {
             }
         }
     }
+
+    private func attachItemStatusObserverIfNeeded() {
+        guard
+            let player,
+            let item = player.currentItem,
+            itemStatusObservation == nil
+        else { return }
+
+        itemStatusObservation = item.observe(\.status, options: [.new, .initial]) { observedItem, _ in
+            guard observedItem.status == .readyToPlay else { return }
+            DispatchQueue.main.async {
+                attemptAutoplayIfPossible()
+            }
+        }
+    }
+
+    private func attachRecoveryObserverIfNeeded() {
+        guard
+            let player,
+            let item = player.currentItem,
+            keepUpObservation == nil,
+            playbackStalledObserver == nil
+        else { return }
+
+        keepUpObservation = item.observe(\.isPlaybackLikelyToKeepUp, options: [.new]) { observedItem, _ in
+            guard observedItem.isPlaybackLikelyToKeepUp else { return }
+            DispatchQueue.main.async {
+                guard shouldResumeAfterStall else { return }
+                player.playImmediately(atRate: 1.0)
+                shouldResumeAfterStall = false
+            }
+        }
+
+        playbackStalledObserver = NotificationCenter.default.addObserver(
+            forName: .AVPlayerItemPlaybackStalled,
+            object: item,
+            queue: .main
+        ) { _ in
+            shouldResumeAfterStall = true
+        }
+    }
+
+    private func attemptAutoplayIfPossible() {
+        guard autoplay, pendingAutoplay, let player else { return }
+
+        if let item = player.currentItem, item.status == .readyToPlay {
+            VideoPlaybackCoordinator.shared.setActive(player)
+            player.playImmediately(atRate: 1.0)
+            pendingAutoplay = false
+        }
+    }
+}
+
+private func makeOptimizedPlayer(for url: URL) -> AVPlayer {
+    let asset = AVURLAsset(
+        url: url,
+        options: [AVURLAssetPreferPreciseDurationAndTimingKey: false]
+    )
+    let item = AVPlayerItem(asset: asset)
+    item.preferredForwardBufferDuration = 1
+
+    let player = AVPlayer(playerItem: item)
+    player.automaticallyWaitsToMinimizeStalling = false
+    player.allowsExternalPlayback = false
+    return player
 }
 
 private struct FullscreenVideoPlayer: View {
@@ -1502,6 +1803,85 @@ private func firstCapturedValue(in line: String, pattern: String) -> String? {
     return source.substring(with: match.range(at: 1))
 }
 
+private func downsampledPreviewImage(from data: Data, maxPixelSize: CGFloat) -> UIImage? {
+    let options = [kCGImageSourceShouldCache: false] as CFDictionary
+    guard let source = CGImageSourceCreateWithData(data as CFData, options) else {
+        return nil
+    }
+
+    let downsampleOptions = [
+        kCGImageSourceCreateThumbnailFromImageAlways: true,
+        kCGImageSourceShouldCacheImmediately: true,
+        kCGImageSourceCreateThumbnailWithTransform: true,
+        kCGImageSourceThumbnailMaxPixelSize: maxPixelSize,
+    ] as CFDictionary
+
+    guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, downsampleOptions) else {
+        return nil
+    }
+
+    return UIImage(cgImage: image)
+}
+
+private enum ProjectImagePreviewSize: String {
+    case card
+    case detail
+}
+
+private func projectImagePreviewURL(for originalURL: URL, size: ProjectImagePreviewSize) -> URL? {
+    guard originalURL.path.hasPrefix("/media/") else {
+        return nil
+    }
+
+    let pathExtension = originalURL.pathExtension.lowercased()
+    let supportedExtensions = ["jpg", "jpeg", "png", "gif", "webp", "heic", "heif"]
+    guard supportedExtensions.contains(pathExtension) else {
+        return nil
+    }
+
+    guard originalURL.path != "/api/v1/media/image-preview/" else {
+        return originalURL
+    }
+
+    var components = URLComponents()
+    components.scheme = originalURL.scheme
+    components.host = originalURL.host
+    components.port = originalURL.port
+    components.path = "/api/v1/media/image-preview/"
+    components.queryItems = [
+        URLQueryItem(name: "url", value: originalURL.absoluteString),
+        URLQueryItem(name: "size", value: size.rawValue),
+    ]
+    return components.url
+}
+
+private func loadImageData(originalURL: URL, previewURL: URL?) async throws -> Data {
+    if let previewURL, previewURL != originalURL {
+        do {
+            return try await fetchImageData(from: previewURL)
+        } catch {
+            return try await fetchImageData(from: originalURL)
+        }
+    }
+
+    return try await fetchImageData(from: originalURL)
+}
+
+private func fetchImageData(from url: URL) async throws -> Data {
+    var request = URLRequest(url: url)
+    request.cachePolicy = .returnCacheDataElseLoad
+    request.timeoutInterval = 60
+
+    let (data, response) = try await URLSession.shared.data(for: request)
+    guard let httpResponse = response as? HTTPURLResponse else {
+        throw APIError.invalidResponse
+    }
+    guard (200...299).contains(httpResponse.statusCode) else {
+        throw APIError.invalidResponse
+    }
+    return data
+}
+
 private func displayDate(from isoDate: String) -> String {
     let isoFormatter = ISO8601DateFormatter()
     isoFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
@@ -1556,6 +1936,10 @@ private func adaptiveVideoHeight() -> CGFloat {
     let contentWidth = max(screenWidth - 40, 240)
     let ideal = contentWidth * 9 / 16
     return min(max(ideal, 180), 340)
+}
+
+private func entryPreviewMediaHeight() -> CGFloat {
+    adaptiveVideoHeight()
 }
 
 private func videoMimeType(for fileExtension: String) -> String {
