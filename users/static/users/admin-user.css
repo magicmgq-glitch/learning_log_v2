@@ -1,0 +1,435 @@
+body.app-auth.model-user {
+  --user-accent: #0f766e;
+  --user-accent-soft: #ccfbf1;
+  --user-surface: #f8fafc;
+  --user-card: #ffffff;
+  --user-border: #d9e2ec;
+  --user-muted: #5b6b7f;
+  --user-text: #142132;
+  --user-shadow: 0 16px 40px rgba(15, 23, 42, 0.08);
+}
+
+body.app-auth.model-user #content {
+  max-width: 1400px;
+}
+
+body.app-auth.model-user .user-admin-page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 22px;
+  padding: 24px 28px;
+  border: 1px solid var(--user-border);
+  border-radius: 24px;
+  background:
+    radial-gradient(circle at top left, rgba(204, 251, 241, 0.95), transparent 38%),
+    linear-gradient(135deg, #ffffff 0%, #f5fbfa 100%);
+  box-shadow: var(--user-shadow);
+}
+
+body.app-auth.model-user .user-admin-page-header h1 {
+  margin: 0 0 6px;
+  color: var(--user-text);
+  font-size: 28px;
+  font-weight: 700;
+}
+
+body.app-auth.model-user .user-admin-page-header p {
+  margin: 0;
+  max-width: 720px;
+  color: var(--user-muted);
+  font-size: 14px;
+  line-height: 1.7;
+}
+
+body.app-auth.model-user #changelist,
+body.app-auth.model-user #content-main form > div,
+body.app-auth.model-user .submit-row {
+  border-radius: 22px;
+}
+
+body.app-auth.model-user #changelist {
+  overflow: hidden;
+  border: 1px solid var(--user-border);
+  background: var(--user-card);
+  box-shadow: var(--user-shadow);
+}
+
+body.app-auth.model-user #changelist .changelist-form-container {
+  padding: 20px;
+  background: linear-gradient(180deg, #fbfefd 0%, #ffffff 100%);
+}
+
+body.app-auth.model-user #changelist.filtered .changelist-form-container {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+body.app-auth.model-user #toolbar,
+body.app-auth.model-user #changelist-filter,
+body.app-auth.model-user .paginator,
+body.app-auth.model-user .actions,
+body.app-auth.model-user fieldset.module,
+body.app-auth.model-user .inline-group,
+body.app-auth.model-user .submit-row {
+  border: 1px solid var(--user-border);
+  border-radius: 20px;
+  background: var(--user-card);
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.05);
+}
+
+body.app-auth.model-user #toolbar,
+body.app-auth.model-user .actions,
+body.app-auth.model-user .paginator,
+body.app-auth.model-user .submit-row {
+  padding: 14px 18px;
+}
+
+body.app-auth.model-user #changelist-filter {
+  padding: 12px 16px;
+  position: static;
+  width: auto;
+  margin: 0;
+}
+
+body.app-auth.model-user #changelist-filter h2 {
+  margin: 0;
+  display: inline-flex;
+  align-items: center;
+  min-height: 40px;
+  padding: 0 14px;
+  border-radius: 999px;
+  color: #0f172a;
+  background: #ecfeff;
+}
+
+body.app-auth.model-user #changelist-filter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+body.app-auth.model-user #changelist-filter-extra-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-left: auto;
+}
+
+body.app-auth.model-user #changelist-filter-extra-actions h3 {
+  margin: 0;
+}
+
+body.app-auth.model-user #changelist-filter-extra-actions a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1px solid #bfdbfe;
+  border-radius: 999px;
+  color: #1d4ed8;
+  background: #eff6ff;
+  font-weight: 600;
+}
+
+body.app-auth.model-user #changelist-filter details {
+  position: relative;
+  margin: 0;
+}
+
+body.app-auth.model-user #changelist-filter details summary {
+  display: inline-flex;
+  align-items: center;
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1px solid #cfe7e2;
+  border-radius: 999px;
+  color: #134e4a;
+  background: #f0fdfa;
+  cursor: pointer;
+  font-weight: 600;
+  list-style: none;
+}
+
+body.app-auth.model-user #changelist-filter details summary::-webkit-details-marker {
+  display: none;
+}
+
+body.app-auth.model-user #changelist-filter details[open] summary {
+  border-color: #99f6e4;
+  box-shadow: 0 8px 20px rgba(13, 148, 136, 0.12);
+}
+
+body.app-auth.model-user #changelist-filter details ul {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 20;
+  min-width: 220px;
+  margin: 0;
+  padding: 10px;
+  list-style: none;
+  border: 1px solid var(--user-border);
+  border-radius: 18px;
+  background: #fff;
+  box-shadow: 0 16px 32px rgba(15, 23, 42, 0.12);
+}
+
+body.app-auth.model-user #changelist-filter details li {
+  margin: 0;
+}
+
+body.app-auth.model-user #changelist-filter details li + li {
+  margin-top: 4px;
+}
+
+body.app-auth.model-user #changelist-filter details li a {
+  display: block;
+  padding: 9px 10px;
+  border-radius: 10px;
+  color: var(--user-text);
+}
+
+body.app-auth.model-user #changelist-filter details li.selected a,
+body.app-auth.model-user #changelist-filter details li a:hover {
+  color: #0f766e;
+  background: #ecfdf5;
+}
+
+body.app-auth.model-user #toolbar form input[type="text"],
+body.app-auth.model-user input[type="text"],
+body.app-auth.model-user input[type="email"],
+body.app-auth.model-user input[type="password"],
+body.app-auth.model-user input[type="number"],
+body.app-auth.model-user textarea,
+body.app-auth.model-user select {
+  border: 1px solid #c9d5e2;
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: #fcfefe;
+}
+
+body.app-auth.model-user input:focus,
+body.app-auth.model-user textarea:focus,
+body.app-auth.model-user select:focus {
+  border-color: var(--user-accent);
+  box-shadow: 0 0 0 4px rgba(15, 118, 110, 0.12);
+}
+
+body.app-auth.model-user .results {
+  overflow-x: auto;
+}
+
+body.app-auth.model-user #result_list {
+  border-collapse: separate;
+  border-spacing: 0 12px;
+}
+
+body.app-auth.model-user #result_list thead th {
+  border: none;
+  background: transparent;
+  color: var(--user-muted);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+body.app-auth.model-user #result_list tbody tr {
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.06);
+}
+
+body.app-auth.model-user #result_list tbody td,
+body.app-auth.model-user #result_list tbody th {
+  border-top: 1px solid var(--user-border);
+  border-bottom: 1px solid var(--user-border);
+  background: #fff;
+  vertical-align: middle;
+}
+
+body.app-auth.model-user #result_list tbody td:first-child {
+  border-left: 1px solid var(--user-border);
+  border-top-left-radius: 16px;
+  border-bottom-left-radius: 16px;
+}
+
+body.app-auth.model-user #result_list tbody th {
+  border-left: none;
+}
+
+body.app-auth.model-user #result_list tbody td:last-child {
+  border-right: 1px solid var(--user-border);
+  border-top-right-radius: 16px;
+  border-bottom-right-radius: 16px;
+}
+
+body.app-auth.model-user #result_list td.action-checkbox {
+  width: 54px;
+  padding: 0 0 0 14px;
+  text-align: center;
+  background: #f6fdfa;
+}
+
+body.app-auth.model-user #result_list td.action-checkbox input[type="checkbox"],
+body.app-auth.model-user .action-checkbox-column input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--user-accent);
+  cursor: pointer;
+}
+
+body.app-auth.model-user #result_list td.action-checkbox + th {
+  padding-left: 8px;
+}
+
+body.app-auth.model-user .action-checkbox-column {
+  width: 54px;
+}
+
+body.app-auth.model-user #result_list tbody tr:hover td,
+body.app-auth.model-user #result_list tbody tr:hover th {
+  background: #f6fdfa;
+}
+
+body.app-auth.model-user .user-admin-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+body.app-auth.model-user .user-admin-name {
+  color: var(--user-text);
+  font-size: 15px;
+}
+
+body.app-auth.model-user .user-admin-subline {
+  color: var(--user-muted);
+  font-size: 12px;
+}
+
+body.app-auth.model-user .user-admin-email {
+  color: var(--user-accent);
+  font-weight: 600;
+}
+
+body.app-auth.model-user .user-admin-badges,
+body.app-auth.model-user .user-admin-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+body.app-auth.model-user .user-admin-badge,
+body.app-auth.model-user .user-admin-stats span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 0 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+body.app-auth.model-user .user-admin-stats span {
+  color: #155e75;
+  background: #ecfeff;
+}
+
+body.app-auth.model-user .user-admin-badge.badge-admin {
+  color: #7c2d12;
+  background: #ffedd5;
+}
+
+body.app-auth.model-user .user-admin-badge.badge-user {
+  color: #1d4ed8;
+  background: #dbeafe;
+}
+
+body.app-auth.model-user .user-admin-badge.badge-active {
+  color: #166534;
+  background: #dcfce7;
+}
+
+body.app-auth.model-user .user-admin-badge.badge-inactive {
+  color: #991b1b;
+  background: #fee2e2;
+}
+
+body.app-auth.model-user fieldset.module h2,
+body.app-auth.model-user .inline-group h2,
+body.app-auth.model-user #changelist-filter h2 {
+  background: transparent;
+  color: var(--user-text);
+  font-size: 16px;
+  font-weight: 700;
+}
+
+body.app-auth.model-user .aligned label {
+  color: var(--user-text);
+  font-weight: 600;
+}
+
+body.app-auth.model-user .help {
+  color: var(--user-muted);
+}
+
+body.app-auth.model-user .submit-row input.default,
+body.app-auth.model-user .button,
+body.app-auth.model-user input[type="submit"],
+body.app-auth.model-user input[type="button"],
+body.app-auth.model-user .object-tools a,
+body.app-auth.model-user .actions select,
+body.app-auth.model-user .actions button {
+  border-radius: 999px;
+}
+
+body.app-auth.model-user .actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+body.app-auth.model-user .actions select {
+  min-height: 40px;
+  padding: 0 14px;
+}
+
+body.app-auth.model-user .actions button,
+body.app-auth.model-user .actions input[type="submit"] {
+  min-height: 40px;
+  padding: 0 18px;
+}
+
+body.app-auth.model-user .submit-row input.default,
+body.app-auth.model-user .object-tools a.addlink {
+  background: linear-gradient(135deg, #0f766e 0%, #115e59 100%);
+}
+
+@media (max-width: 1024px) {
+  body.app-auth.model-user .user-admin-page-header {
+    padding: 20px;
+    border-radius: 18px;
+  }
+
+  body.app-auth.model-user #changelist .changelist-form-container {
+    padding: 14px;
+  }
+
+  body.app-auth.model-user #result_list {
+    border-spacing: 0 8px;
+  }
+
+  body.app-auth.model-user #changelist-filter details {
+    width: 100%;
+  }
+
+  body.app-auth.model-user #changelist-filter details ul {
+    position: static;
+    min-width: 0;
+    margin-top: 8px;
+  }
+}

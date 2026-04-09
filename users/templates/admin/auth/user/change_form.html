@@ -1,0 +1,10 @@
+{% extends "admin/change_form.html" %}
+
+{% block content_title %}
+<div class="user-admin-page-header">
+  <div>
+    <h1>{% if add %}新建用户{% else %}编辑用户{% endif %}</h1>
+    <p>常用资料和学习统计放在前面，权限和登录时间收进可折叠区域，避免页面过于拥挤。</p>
+  </div>
+</div>
+{% endblock %}

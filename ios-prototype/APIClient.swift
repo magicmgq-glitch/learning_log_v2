@@ -9,11 +9,11 @@ enum APIError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .invalidURL:
-            return "Invalid server URL."
+            return "服务器地址无效。"
         case .invalidResponse:
-            return "Invalid server response."
+            return "服务器返回的数据无效。"
         case .unauthorized:
-            return "Login expired or unauthorized."
+            return "登录状态已过期，请重新登录。"
         case .server(let message):
             return message
         }
@@ -35,6 +35,58 @@ private struct EntryUpdateRequest: Encodable {
 private struct APIErrorPayload: Decodable {
     let error: String?
     let detail: String?
+}
+
+private final class UploadProgressDelegate: NSObject, URLSessionDataDelegate, URLSessionTaskDelegate {
+    private let onProgress: (Double) -> Void
+    private var responseData = Data()
+    var continuation: CheckedContinuation<(Data, URLResponse), Error>?
+
+    init(onProgress: @escaping (Double) -> Void) {
+        self.onProgress = onProgress
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        didSendBodyData bytesSent: Int64,
+        totalBytesSent: Int64,
+        totalBytesExpectedToSend: Int64
+    ) {
+        guard totalBytesExpectedToSend > 0 else { return }
+        let progress = min(max(Double(totalBytesSent) / Double(totalBytesExpectedToSend), 0), 1)
+        onProgress(progress)
+    }
+
+    func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
+        responseData.append(data)
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        dataTask: URLSessionDataTask,
+        didReceive response: URLResponse,
+        completionHandler: @escaping (URLSession.ResponseDisposition) -> Void
+    ) {
+        completionHandler(.allow)
+    }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+        guard let continuation else { return }
+        self.continuation = nil
+
+        if let error {
+            continuation.resume(throwing: error)
+            return
+        }
+
+        guard let response = task.response else {
+            continuation.resume(throwing: APIError.invalidResponse)
+            return
+        }
+
+        continuation.resume(returning: (responseData, response))
+    }
 }
 
 final class APIClient {
@@ -77,6 +129,20 @@ final class APIClient {
             body: requestBody,
             accessToken: nil,
             responseType: TokenPair.self
+        )
+    }
+
+    func refreshAccessToken(refreshToken: String) async throws -> AccessTokenResponse {
+        struct RefreshRequest: Encodable {
+            let refresh: String
+        }
+
+        return try await send(
+            path: "/api/v1/auth/token/refresh/",
+            method: "POST",
+            body: RefreshRequest(refresh: refreshToken),
+            accessToken: nil,
+            responseType: AccessTokenResponse.self
         )
     }
 
@@ -221,7 +287,8 @@ final class APIClient {
         videoData: Data,
         filename: String,
         mimeType: String,
-        accessToken: String
+        accessToken: String,
+        onProgress: ((Double) -> Void)? = nil
     ) async throws -> URL {
         guard let url = URL(string: "/api/v1/uploads/videos/", relativeTo: baseURL)?.absoluteURL else {
             throw APIError.invalidURL
@@ -244,7 +311,13 @@ final class APIClient {
         body.append(videoData)
         body.append("\r\n--\(boundary)--\r\n".data(using: .utf8)!)
 
-        let (data, response) = try await URLSession.shared.upload(for: request, from: body)
+        request.timeoutInterval = 15 * 60
+
+        let (data, response) = try await uploadMultipart(
+            request: request,
+            body: body,
+            onProgress: onProgress
+        )
         guard let httpResponse = response as? HTTPURLResponse else {
             throw APIError.invalidResponse
         }
@@ -267,6 +340,31 @@ final class APIClient {
             throw APIError.server("Invalid uploaded video URL.")
         }
         return uploadedURL
+    }
+
+    private func uploadMultipart(
+        request: URLRequest,
+        body: Data,
+        onProgress: ((Double) -> Void)?
+    ) async throws -> (Data, URLResponse) {
+        guard let onProgress else {
+            return try await URLSession.shared.upload(for: request, from: body)
+        }
+
+        onProgress(0)
+        let delegate = UploadProgressDelegate(onProgress: onProgress)
+        let session = URLSession(configuration: .default, delegate: delegate, delegateQueue: nil)
+        defer {
+            session.finishTasksAndInvalidate()
+        }
+
+        let result: (Data, URLResponse) = try await withCheckedThrowingContinuation { continuation in
+            delegate.continuation = continuation
+            let task = session.uploadTask(with: request, from: body)
+            task.resume()
+        }
+        onProgress(1)
+        return result
     }
 
     private func send<RequestBody: Encodable, ResponseBody: Decodable>(

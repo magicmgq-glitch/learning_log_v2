@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		04F5E8D345B14A0BAA9C0F21 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 0A8ABE752F868A8300BA74AE /* Assets.xcassets */; };
 		06B99BF53ADA9A4CD7898D1F /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 966E0D3496A3685D0E777F1E /* Models.swift */; };
 		140F3CC5F2E754E4718F94F9 /* TopicDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 754E05E68CCCDF3BA8BC4ECE /* TopicDetailView.swift */; };
 		2449434D789A910AA1297A4B /* LearningLogIOSPrototypeApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22F11D3068600DF063359BF1 /* LearningLogIOSPrototypeApp.swift */; };
@@ -18,12 +19,13 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		0A8ABE752F868A8300BA74AE /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		0C51B697F6B60FDD2613CC96 /* TopicListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TopicListView.swift; sourceTree = "<group>"; };
 		1F0E48DE60F5641FD94469F5 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		22F11D3068600DF063359BF1 /* LearningLogIOSPrototypeApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LearningLogIOSPrototypeApp.swift; sourceTree = "<group>"; };
 		291744F6AD48259B29468AC0 /* APIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClient.swift; sourceTree = "<group>"; };
 		331EE6C14E9E75984C90124E /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
-		3BBAE9A0A28D1EF493C71DB1 /* LearningLogIOSPrototype.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = LearningLogIOSPrototype.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		3BBAE9A0A28D1EF493C71DB1 /* LearningLogIOSPrototype.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LearningLogIOSPrototype.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		633477B4CFFF886F4280405A /* LoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginView.swift; sourceTree = "<group>"; };
 		754E05E68CCCDF3BA8BC4ECE /* TopicDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TopicDetailView.swift; sourceTree = "<group>"; };
 		966E0D3496A3685D0E777F1E /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
@@ -51,6 +53,7 @@
 				E77170E4AFE23A83C6028482 /* SessionStore.swift */,
 				754E05E68CCCDF3BA8BC4ECE /* TopicDetailView.swift */,
 				0C51B697F6B60FDD2613CC96 /* TopicListView.swift */,
+				0A8ABE752F868A8300BA74AE /* Assets.xcassets */,
 			);
 			name = "ios-prototype";
 			path = .;
@@ -71,6 +74,7 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = 17BAAA93CC37DDCB8E3E6397 /* Build configuration list for PBXNativeTarget "LearningLogIOSPrototype" */;
 			buildPhases = (
+				9F3A7C121D4B4E2B98C115A7 /* Resources */,
 				B626230A31BB1B4604385040 /* Sources */,
 			);
 			buildRules = (
@@ -92,8 +96,6 @@
 			attributes = {
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 1430;
-				TargetAttributes = {
-				};
 			};
 			buildConfigurationList = ED0D1947974AA0373B53EB60 /* Build configuration list for PBXProject "LearningLogIOSPrototype" */;
 			developmentRegion = en;
@@ -113,6 +115,17 @@
 			);
 		};
 /* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		9F3A7C121D4B4E2B98C115A7 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				04F5E8D345B14A0BAA9C0F21 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		B626230A31BB1B4604385040 /* Sources */ = {
@@ -137,6 +150,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -156,6 +170,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = NO;

@@ -5,6 +5,10 @@ struct TokenPair: Decodable {
     let refresh: String
 }
 
+struct AccessTokenResponse: Decodable {
+    let access: String
+}
+
 struct LoginRequest: Encodable {
     let username: String
     let password: String

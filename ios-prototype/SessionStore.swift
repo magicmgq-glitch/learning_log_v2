@@ -53,12 +53,13 @@ final class SessionStore: ObservableObject {
     }
 
     func reloadTopics() async {
-        guard let accessToken else { return }
         isLoading = true
         errorMessage = ""
 
         do {
-            let topicResponse = try await apiClient.topics(accessToken: accessToken)
+            let topicResponse = try await performAuthorizedRequest { accessToken in
+                try await self.apiClient.topics(accessToken: accessToken)
+            }
             topics = topicResponse.topics
         } catch {
             errorMessage = error.localizedDescription
@@ -68,72 +69,115 @@ final class SessionStore: ObservableObject {
     }
 
     func topicDetail(topicID: Int) async throws -> TopicDetailResponse {
-        guard let accessToken else {
-            throw APIError.unauthorized
+        try await performAuthorizedRequest { accessToken in
+            try await self.apiClient.topicDetail(topicID: topicID, accessToken: accessToken)
         }
-        return try await apiClient.topicDetail(topicID: topicID, accessToken: accessToken)
     }
 
     func updateTopic(topicID: Int, text: String) async throws -> Topic {
-        guard let accessToken else {
-            throw APIError.unauthorized
+        let response = try await performAuthorizedRequest { accessToken in
+            try await self.apiClient.updateTopic(
+                topicID: topicID,
+                text: text,
+                accessToken: accessToken
+            )
         }
-        let response = try await apiClient.updateTopic(topicID: topicID, text: text, accessToken: accessToken)
         return response.topic
     }
 
     func deleteTopic(topicID: Int) async throws {
-        guard let accessToken else {
-            throw APIError.unauthorized
+        try await performAuthorizedRequest { accessToken in
+            try await self.apiClient.deleteTopic(topicID: topicID, accessToken: accessToken)
+            return ()
         }
-        try await apiClient.deleteTopic(topicID: topicID, accessToken: accessToken)
     }
 
     func createEntry(topicID: Int, text: String) async throws -> Entry {
-        guard let accessToken else {
-            throw APIError.unauthorized
+        let response = try await performAuthorizedRequest { accessToken in
+            try await self.apiClient.createEntry(
+                topicID: topicID,
+                text: text,
+                accessToken: accessToken
+            )
         }
-        let response = try await apiClient.createEntry(topicID: topicID, text: text, accessToken: accessToken)
         return response.entry
     }
 
     func deleteEntry(entryID: Int) async throws {
-        guard let accessToken else {
-            throw APIError.unauthorized
+        try await performAuthorizedRequest { accessToken in
+            try await self.apiClient.deleteEntry(entryID: entryID, accessToken: accessToken)
+            return ()
         }
-        try await apiClient.deleteEntry(entryID: entryID, accessToken: accessToken)
     }
 
     func updateEntry(entryID: Int, text: String) async throws -> Entry {
-        guard let accessToken else {
-            throw APIError.unauthorized
+        let response = try await performAuthorizedRequest { accessToken in
+            try await self.apiClient.updateEntry(
+                entryID: entryID,
+                text: text,
+                accessToken: accessToken
+            )
         }
-        let response = try await apiClient.updateEntry(entryID: entryID, text: text, accessToken: accessToken)
         return response.entry
     }
 
     func uploadMarkdownImage(imageData: Data, filename: String, mimeType: String) async throws -> URL {
-        guard let accessToken else {
-            throw APIError.unauthorized
+        try await performAuthorizedRequest { accessToken in
+            try await self.apiClient.uploadMarkdownImage(
+                imageData: imageData,
+                filename: filename,
+                mimeType: mimeType,
+                accessToken: accessToken
+            )
         }
-        return try await apiClient.uploadMarkdownImage(
-            imageData: imageData,
-            filename: filename,
-            mimeType: mimeType,
-            accessToken: accessToken
-        )
     }
 
-    func uploadMarkdownVideo(videoData: Data, filename: String, mimeType: String) async throws -> URL {
+    func uploadMarkdownVideo(
+        videoData: Data,
+        filename: String,
+        mimeType: String,
+        onProgress: ((Double) -> Void)? = nil
+    ) async throws -> URL {
+        try await performAuthorizedRequest { accessToken in
+            try await self.apiClient.uploadMarkdownVideo(
+                videoData: videoData,
+                filename: filename,
+                mimeType: mimeType,
+                accessToken: accessToken,
+                onProgress: onProgress
+            )
+        }
+    }
+
+    private func performAuthorizedRequest<T>(
+        _ operation: @escaping (String) async throws -> T
+    ) async throws -> T {
         guard let accessToken else {
             throw APIError.unauthorized
         }
-        return try await apiClient.uploadMarkdownVideo(
-            videoData: videoData,
-            filename: filename,
-            mimeType: mimeType,
-            accessToken: accessToken
-        )
+
+        do {
+            return try await operation(accessToken)
+        } catch APIError.unauthorized {
+            let refreshedAccessToken = try await refreshAccessToken()
+            return try await operation(refreshedAccessToken)
+        }
+    }
+
+    private func refreshAccessToken() async throws -> String {
+        guard let refreshToken else {
+            logout()
+            throw APIError.unauthorized
+        }
+
+        do {
+            let response = try await apiClient.refreshAccessToken(refreshToken: refreshToken)
+            accessToken = response.access
+            return response.access
+        } catch {
+            logout()
+            throw APIError.unauthorized
+        }
     }
 
     func logout() {

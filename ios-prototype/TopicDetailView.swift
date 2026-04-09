@@ -1,4 +1,5 @@
 import AVKit
+import Foundation
 import PhotosUI
 import QuickLook
 import SwiftUI
@@ -17,20 +18,14 @@ struct TopicDetailView: View {
     @State private var showingNewEntrySheet = false
     @State private var showingEditTopicSheet = false
     @State private var showingDeleteTopicAlert = false
-    @State private var showingDeleteEntryAlert = false
-    @State private var pendingDeleteEntryID: Int?
+    @State private var selectedEntry: Entry?
     @State private var newEntryText = ""
     @State private var newEntryErrorMessage = ""
     @State private var editTopicText = ""
     @State private var editTopicErrorMessage = ""
-    @State private var editingEntry: Entry?
-    @State private var editEntryText = ""
-    @State private var editEntryErrorMessage = ""
     @State private var isSubmittingNewEntry = false
     @State private var isSubmittingTopicEdit = false
-    @State private var isSubmittingEntryEdit = false
     @State private var isDeletingTopic = false
-    @State private var previewAttachment: AttachmentTarget?
 
     init(topic: Topic) {
         self.topic = topic
@@ -49,19 +44,12 @@ struct TopicDetailView: View {
                 } else {
                     LazyVStack(spacing: 10) {
                         ForEach(entries) { entry in
-                            EntryCard(entry: entry) {
-                                editEntryText = entry.text
-                                editEntryErrorMessage = ""
-                                editingEntry = entry
-                            } onDelete: {
-                                pendingDeleteEntryID = entry.id
-                                showingDeleteEntryAlert = true
-                            } onPreviewAttachment: { url in
-                                previewAttachment = AttachmentTarget(
-                                    url: url,
-                                    title: "附件预览"
-                                )
+                            Button {
+                                selectedEntry = entry
+                            } label: {
+                                EntryPreviewCard(entry: entry)
                             }
+                            .buttonStyle(.plain)
                         }
                     }
                 }
@@ -108,7 +96,7 @@ struct TopicDetailView: View {
         .refreshable {
             await loadEntries(force: true)
         }
-        .sheet(isPresented: $showingNewEntrySheet) {
+        .fullScreenCover(isPresented: $showingNewEntrySheet) {
             EntryComposerSheet(
                 title: "写新笔记",
                 placeholder: "输入本次学习记录...",
@@ -128,11 +116,12 @@ struct TopicDetailView: View {
                         mimeType: mimeType
                     )
                 },
-                onUploadVideo: { data, filename, mimeType in
+                onUploadVideo: { data, filename, mimeType, onProgress in
                     try await session.uploadMarkdownVideo(
                         videoData: data,
                         filename: filename,
-                        mimeType: mimeType
+                        mimeType: mimeType,
+                        onProgress: onProgress
                     )
                 }
             )
@@ -149,37 +138,23 @@ struct TopicDetailView: View {
                 }
             )
         }
-        .sheet(item: $editingEntry) { entry in
-            EntryComposerSheet(
-                title: "编辑笔记",
-                placeholder: "更新你的学习记录...",
-                submitTitle: "保存修改",
-                text: $editEntryText,
-                errorMessage: editEntryErrorMessage,
-                isSubmitting: isSubmittingEntryEdit,
-                onSubmit: {
-                    Task {
-                        await submitEntryEdit(entryID: entry.id)
+        .fullScreenCover(item: $selectedEntry) { entry in
+            NavigationStack {
+                EntryDetailView(
+                    topicTitle: currentTopic.text,
+                    entry: entry,
+                    onEntryUpdated: { updatedEntry in
+                        if let index = entries.firstIndex(where: { $0.id == updatedEntry.id }) {
+                            entries[index] = updatedEntry
+                        }
+                        selectedEntry = updatedEntry
+                    },
+                    onEntryDeleted: { deletedEntryID in
+                        entries.removeAll { $0.id == deletedEntryID }
+                        selectedEntry = nil
                     }
-                },
-                onUploadImage: { data, filename, mimeType in
-                    try await session.uploadMarkdownImage(
-                        imageData: data,
-                        filename: filename,
-                        mimeType: mimeType
-                    )
-                },
-                onUploadVideo: { data, filename, mimeType in
-                    try await session.uploadMarkdownVideo(
-                        videoData: data,
-                        filename: filename,
-                        mimeType: mimeType
-                    )
-                }
-            )
-        }
-        .sheet(item: $previewAttachment) { target in
-            AttachmentPreviewSheet(target: target)
+                )
+            }
         }
         .alert("确认删除主题？", isPresented: $showingDeleteTopicAlert) {
             Button("删除", role: .destructive) {
@@ -194,16 +169,6 @@ struct TopicDetailView: View {
             } else {
                 Text("删除后不可恢复，包含该主题下全部笔记。")
             }
-        }
-        .alert("确认删除这条笔记？", isPresented: $showingDeleteEntryAlert, presenting: pendingDeleteEntryID) { entryID in
-            Button("删除", role: .destructive) {
-                Task {
-                    await deleteEntry(entryID)
-                }
-            }
-            Button("取消", role: .cancel) {}
-        } message: { _ in
-            Text("删除后不可恢复。")
         }
     }
 
@@ -336,43 +301,16 @@ struct TopicDetailView: View {
         isDeletingTopic = false
     }
 
-    private func deleteEntry(_ entryID: Int) async {
-        do {
-            try await session.deleteEntry(entryID: entryID)
-            entries.removeAll { $0.id == entryID }
-            pendingDeleteEntryID = nil
-        } catch {
-            errorMessage = error.localizedDescription
-        }
-    }
-
-    private func submitEntryEdit(entryID: Int) async {
-        let trimmed = editEntryText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else {
-            editEntryErrorMessage = "笔记内容不能为空。"
-            return
-        }
-
-        isSubmittingEntryEdit = true
-        editEntryErrorMessage = ""
-        do {
-            let updatedEntry = try await session.updateEntry(entryID: entryID, text: trimmed)
-            if let index = entries.firstIndex(where: { $0.id == entryID }) {
-                entries[index] = updatedEntry
-            }
-            editingEntry = nil
-        } catch {
-            editEntryErrorMessage = error.localizedDescription
-        }
-        isSubmittingEntryEdit = false
-    }
 }
 
-private struct EntryCard: View {
+private struct EntryPreviewCard: View {
     let entry: Entry
-    let onEdit: () -> Void
-    let onDelete: () -> Void
-    let onPreviewAttachment: (URL) -> Void
+    private let preview: EntryPreviewSummary
+
+    init(entry: Entry) {
+        self.entry = entry
+        preview = entryPreviewSummary(from: entry)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -381,16 +319,202 @@ private struct EntryCard: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Spacer()
-                Button("编辑") {
-                    onEdit()
-                }
-                .font(.caption)
-                Button("删除", role: .destructive) {
-                    onDelete()
-                }
-                .font(.caption)
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.tertiary)
             }
 
+            Text(preview.title)
+                .font(.headline)
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+
+            EntryPreviewMediaView(summary: preview)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color(.secondarySystemGroupedBackground))
+        )
+    }
+}
+
+private struct EntryDetailView: View {
+    @EnvironmentObject private var session: SessionStore
+    @Environment(\.dismiss) private var dismiss
+
+    let topicTitle: String
+    let onEntryUpdated: (Entry) -> Void
+    let onEntryDeleted: (Int) -> Void
+
+    @State private var entry: Entry
+    @State private var showingDeleteAlert = false
+    @State private var showingEditSheet = false
+    @State private var editText: String
+    @State private var editErrorMessage = ""
+    @State private var actionErrorMessage = ""
+    @State private var isSubmittingEdit = false
+    @State private var isDeleting = false
+    @State private var previewAttachment: AttachmentTarget?
+
+    init(
+        topicTitle: String,
+        entry: Entry,
+        onEntryUpdated: @escaping (Entry) -> Void,
+        onEntryDeleted: @escaping (Int) -> Void
+    ) {
+        self.topicTitle = topicTitle
+        self.onEntryUpdated = onEntryUpdated
+        self.onEntryDeleted = onEntryDeleted
+        _entry = State(initialValue: entry)
+        _editText = State(initialValue: entry.text)
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text(topicTitle)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    HStack {
+                        Text(displayDate(from: entry.dateAdded))
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Button("编辑") {
+                            editText = entry.text
+                            editErrorMessage = ""
+                            showingEditSheet = true
+                        }
+                        .buttonStyle(.bordered)
+
+                        Button("删除", role: .destructive) {
+                            showingDeleteAlert = true
+                        }
+                        .buttonStyle(.bordered)
+                    }
+                }
+
+                if !actionErrorMessage.isEmpty {
+                    Text(actionErrorMessage)
+                        .font(.subheadline)
+                        .foregroundStyle(.red)
+                }
+
+                EntryContentBody(entry: entry) { url in
+                    previewAttachment = AttachmentTarget(url: url, title: "附件预览")
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 12)
+            .padding(.bottom, 22)
+        }
+        .background(Color(.systemGroupedBackground).ignoresSafeArea())
+        .navigationTitle("笔记详情")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                Button {
+                    dismiss()
+                } label: {
+                    Label("返回", systemImage: "chevron.left")
+                }
+            }
+        }
+        .fullScreenCover(isPresented: $showingEditSheet) {
+            EntryComposerSheet(
+                title: "编辑笔记",
+                placeholder: "更新你的学习记录...",
+                submitTitle: "保存修改",
+                text: $editText,
+                errorMessage: editErrorMessage,
+                isSubmitting: isSubmittingEdit,
+                onSubmit: {
+                    Task {
+                        await submitEdit()
+                    }
+                },
+                onUploadImage: { data, filename, mimeType in
+                    try await session.uploadMarkdownImage(
+                        imageData: data,
+                        filename: filename,
+                        mimeType: mimeType
+                    )
+                },
+                onUploadVideo: { data, filename, mimeType, onProgress in
+                    try await session.uploadMarkdownVideo(
+                        videoData: data,
+                        filename: filename,
+                        mimeType: mimeType,
+                        onProgress: onProgress
+                    )
+                }
+            )
+        }
+        .sheet(item: $previewAttachment) { target in
+            AttachmentPreviewSheet(target: target)
+        }
+        .alert("确认删除这条笔记？", isPresented: $showingDeleteAlert) {
+            Button("删除", role: .destructive) {
+                Task {
+                    await deleteEntry()
+                }
+            }
+            Button("取消", role: .cancel) {}
+        } message: {
+            if isDeleting {
+                Text("正在删除...")
+            } else {
+                Text("删除后不可恢复。")
+            }
+        }
+    }
+
+    private func submitEdit() async {
+        let trimmed = editText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            editErrorMessage = "笔记内容不能为空。"
+            return
+        }
+
+        isSubmittingEdit = true
+        editErrorMessage = ""
+        actionErrorMessage = ""
+        do {
+            let updatedEntry = try await session.updateEntry(entryID: entry.id, text: trimmed)
+            entry = updatedEntry
+            onEntryUpdated(updatedEntry)
+            showingEditSheet = false
+        } catch {
+            editErrorMessage = error.localizedDescription
+        }
+        isSubmittingEdit = false
+    }
+
+    private func deleteEntry() async {
+        isDeleting = true
+        defer { isDeleting = false }
+
+        do {
+            try await session.deleteEntry(entryID: entry.id)
+            onEntryDeleted(entry.id)
+            dismiss()
+        } catch {
+            actionErrorMessage = error.localizedDescription
+        }
+    }
+}
+
+private struct EntryContentBody: View {
+    let entry: Entry
+    let onPreviewAttachment: (URL) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
             MarkdownContentView(markdown: entry.text)
 
             if let imageURL = URL(string: entry.imageURL ?? "") {
@@ -421,14 +545,12 @@ private struct EntryCard: View {
                     .frame(maxWidth: .infinity)
             }
 
-            HStack(spacing: 12) {
-                if let documentURL = URL(string: entry.documentURL ?? "") {
-                    Button {
-                        onPreviewAttachment(documentURL)
-                    } label: {
-                        Label("预览附件", systemImage: "doc.text")
-                            .font(.caption)
-                    }
+            if let documentURL = URL(string: entry.documentURL ?? "") {
+                Button {
+                    onPreviewAttachment(documentURL)
+                } label: {
+                    Label("预览附件", systemImage: "doc.text")
+                        .font(.caption)
                 }
             }
         }
@@ -438,6 +560,74 @@ private struct EntryCard: View {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .fill(Color(.secondarySystemGroupedBackground))
         )
+    }
+}
+
+private struct EntryPreviewMediaView: View {
+    let summary: EntryPreviewSummary
+
+    var body: some View {
+        ZStack(alignment: .bottomTrailing) {
+            Group {
+                switch summary.primaryMedia {
+                case .some(.image(let imageURL)):
+                    AsyncImage(url: imageURL) { phase in
+                        switch phase {
+                        case .empty:
+                            previewPlaceholder
+                        case .success(let image):
+                            image
+                                .resizable()
+                                .scaledToFill()
+                        case .failure:
+                            previewFallback(icon: "photo", text: "图片预览失败")
+                        @unknown default:
+                            previewPlaceholder
+                        }
+                    }
+                case .some(.video(_)):
+                    previewFallback(icon: "video.fill", text: "视频笔记，点击查看详情")
+                case .none:
+                    previewFallback(icon: "text.alignleft", text: summary.body)
+                }
+            }
+
+            if case .some(.video(_)) = summary.primaryMedia {
+                Image(systemName: "play.circle.fill")
+                    .font(.system(size: 42))
+                    .foregroundStyle(.white)
+                    .shadow(radius: 8)
+                    .padding(12)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .aspectRatio(16 / 9, contentMode: .fit)
+        .background(Color(.tertiarySystemGroupedBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+
+    private var previewPlaceholder: some View {
+        ZStack {
+            Color(.tertiarySystemGroupedBackground)
+            ProgressView()
+        }
+    }
+
+    private func previewFallback(icon: String, text: String) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Image(systemName: icon)
+                .font(.title3)
+                .foregroundStyle(.secondary)
+            Text(text)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .lineLimit(5)
+                .multilineTextAlignment(.leading)
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .padding(14)
+        .background(Color(.tertiarySystemGroupedBackground))
     }
 }
 
@@ -696,22 +886,101 @@ private struct MarkdownContentView: View {
     }
 }
 
+private final class VideoPlaybackCoordinator {
+    static let shared = VideoPlaybackCoordinator()
+    private weak var activePlayer: AVPlayer?
+
+    private init() {}
+
+    func setActive(_ player: AVPlayer) {
+        guard activePlayer !== player else { return }
+        activePlayer?.pause()
+        activePlayer = player
+    }
+
+    func clearIfActive(_ player: AVPlayer?) {
+        guard let player else { return }
+        if activePlayer === player {
+            activePlayer = nil
+        }
+    }
+}
+
 private struct InlineVideoPlayer: View {
     let url: URL
     @State private var player: AVPlayer?
+    @State private var statusObservation: NSKeyValueObservation?
+    @State private var showFullscreen = false
 
     var body: some View {
-        VideoPlayer(player: player)
-            .frame(height: adaptiveVideoHeight())
-            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-            .onAppear {
-                if player == nil {
-                    player = AVPlayer(url: url)
+        ZStack(alignment: .topTrailing) {
+            VideoPlayer(player: player)
+                .frame(height: adaptiveVideoHeight())
+
+            Button {
+                showFullscreen = true
+            } label: {
+                Image(systemName: "arrow.up.left.and.arrow.down.right")
+                    .font(.caption.weight(.semibold))
+                    .padding(8)
+                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            }
+            .padding(10)
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .onAppear {
+            if player == nil {
+                player = AVPlayer(url: url)
+            }
+            attachPlaybackObserverIfNeeded()
+        }
+        .onDisappear {
+            statusObservation?.invalidate()
+            statusObservation = nil
+            player?.pause()
+            VideoPlaybackCoordinator.shared.clearIfActive(player)
+        }
+        .fullScreenCover(isPresented: $showFullscreen) {
+            if let player {
+                FullscreenVideoPlayer(player: player)
+            }
+        }
+    }
+
+    private func attachPlaybackObserverIfNeeded() {
+        guard let player, statusObservation == nil else { return }
+        statusObservation = player.observe(\.timeControlStatus, options: [.new]) { observedPlayer, _ in
+            guard observedPlayer.timeControlStatus == .playing else { return }
+            DispatchQueue.main.async {
+                VideoPlaybackCoordinator.shared.setActive(observedPlayer)
+            }
+        }
+    }
+}
+
+private struct FullscreenVideoPlayer: View {
+    @Environment(\.dismiss) private var dismiss
+    let player: AVPlayer
+
+    var body: some View {
+        ZStack(alignment: .topTrailing) {
+            Color.black.ignoresSafeArea()
+
+            VideoPlayer(player: player)
+                .ignoresSafeArea()
+                .onAppear {
+                    VideoPlaybackCoordinator.shared.setActive(player)
                 }
+
+            Button("完成") {
+                dismiss()
             }
-            .onDisappear {
-                player?.pause()
-            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(.ultraThinMaterial, in: Capsule())
+            .padding(.top, 16)
+            .padding(.trailing, 16)
+        }
     }
 }
 
@@ -729,12 +998,18 @@ private struct EntryComposerSheet: View {
     let isSubmitting: Bool
     let onSubmit: () -> Void
     let onUploadImage: (_ data: Data, _ filename: String, _ mimeType: String) async throws -> URL
-    let onUploadVideo: (_ data: Data, _ filename: String, _ mimeType: String) async throws -> URL
+    let onUploadVideo: (
+        _ data: Data,
+        _ filename: String,
+        _ mimeType: String,
+        _ onProgress: @escaping (Double) -> Void
+    ) async throws -> URL
 
     @State private var selectedImage: PhotosPickerItem?
     @State private var selectedVideo: PhotosPickerItem?
     @State private var isUploadingImage = false
     @State private var isUploadingVideo = false
+    @State private var videoUploadProgress = 0.0
     @State private var localErrorMessage = ""
     @State private var showPreview = false
 
@@ -780,9 +1055,19 @@ private struct EntryComposerSheet: View {
                         }
                         .disabled(isUploadingImage || isUploadingVideo || isSubmitting)
 
-                        if isUploadingImage || isUploadingVideo {
+                        if isUploadingImage {
                             ProgressView()
                                 .scaleEffect(0.9)
+                        }
+
+                        if isUploadingVideo {
+                            VStack(alignment: .leading, spacing: 4) {
+                                ProgressView(value: videoUploadProgress, total: 1)
+                                    .frame(width: 120)
+                                Text("视频上传中 \(Int(videoUploadProgress * 100))%")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
                         }
                     }
 
@@ -810,8 +1095,10 @@ private struct EntryComposerSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button("取消") {
+                    Button {
                         dismiss()
+                    } label: {
+                        Label("返回", systemImage: "chevron.left")
                     }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
@@ -877,9 +1164,11 @@ private struct EntryComposerSheet: View {
 
     private func uploadAndInsertMarkdownVideo(item: PhotosPickerItem) async {
         isUploadingVideo = true
+        videoUploadProgress = 0
         localErrorMessage = ""
         defer {
             isUploadingVideo = false
+            videoUploadProgress = 0
             selectedVideo = nil
         }
 
@@ -897,7 +1186,11 @@ private struct EntryComposerSheet: View {
                 data,
                 filename,
                 videoMimeType(for: fileExtension)
-            )
+            ) { progress in
+                DispatchQueue.main.async {
+                    videoUploadProgress = min(max(progress, 0), 1)
+                }
+            }
 
             if !text.isEmpty && !text.hasSuffix("\n") {
                 text += "\n"
@@ -1071,6 +1364,142 @@ private final class PreviewItem: NSObject, QLPreviewItem {
         previewItemURL = url
         previewItemTitle = title
     }
+}
+
+private enum PreviewMediaKind {
+    case image(URL)
+    case video(URL)
+}
+
+private struct EntryPreviewSummary {
+    let title: String
+    let body: String
+    let primaryMedia: PreviewMediaKind?
+}
+
+private func entryPreviewSummary(from entry: Entry) -> EntryPreviewSummary {
+    let normalized = normalizedMarkdownForDisplay(entry.text)
+    let lines = normalized.components(separatedBy: "\n")
+
+    var title: String?
+    var collectedText: [String] = []
+    var imageURL: URL?
+    var videoURL: URL?
+    var primaryMedia: PreviewMediaKind?
+    var inCodeFence = false
+
+    for line in lines {
+        switch codeFenceMarkerType(for: line, inCodeFence: inCodeFence) {
+        case .open:
+            inCodeFence = true
+            continue
+        case .close:
+            inCodeFence = false
+            continue
+        case .none:
+            break
+        }
+
+        let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { continue }
+
+        if let media = previewMedia(from: trimmed) {
+            if primaryMedia == nil {
+                primaryMedia = media
+            }
+            if imageURL == nil, case .image(let url) = media {
+                imageURL = url
+            }
+            if videoURL == nil, case .video(let url) = media {
+                videoURL = url
+            }
+            continue
+        }
+
+        let cleanedLine = previewTextLine(from: trimmed)
+        guard !cleanedLine.isEmpty else { continue }
+
+        if title == nil {
+            title = cleanedLine
+        } else {
+            collectedText.append(cleanedLine)
+        }
+    }
+
+    if imageURL == nil, let rawImageURL = entry.imageURL, let url = URL(string: rawImageURL) {
+        imageURL = url
+        primaryMedia = primaryMedia ?? .image(url)
+    }
+
+    if videoURL == nil, let rawVideoURL = entry.videoURL, let url = URL(string: rawVideoURL) {
+        videoURL = url
+        primaryMedia = primaryMedia ?? .video(url)
+    }
+
+    let fallbackTitle = title ?? "未命名笔记"
+    let fallbackBody = collectedText.joined(separator: " ")
+    let body = fallbackBody.isEmpty ? fallbackTitle : fallbackBody
+
+    return EntryPreviewSummary(
+        title: fallbackTitle,
+        body: body,
+        primaryMedia: primaryMedia
+    )
+}
+
+private func previewMedia(from line: String) -> PreviewMediaKind? {
+    if let imageURLString = firstCapturedValue(
+        in: line,
+        pattern: #"^\s*!\[[^\]]*\]\(([^)\s]+)[^)]*\)\s*$"#
+    ), let url = URL(string: imageURLString) {
+        return .image(url)
+    }
+
+    if let videoURLString = firstCapturedValue(
+        in: line,
+        pattern: #"^\s*@\[(?:video|视频)\]\(([^)\s]+)[^)]*\)\s*$"#
+    ), let url = URL(string: videoURLString) {
+        return .video(url)
+    }
+
+    return nil
+}
+
+private func previewTextLine(from line: String) -> String {
+    let withoutHeading = line.replacingOccurrences(
+        of: #"^\s{0,3}#{1,6}\s*"#,
+        with: "",
+        options: .regularExpression
+    )
+
+    let replacements: [(String, String)] = [
+        (#"!\[([^\]]*)\]\(([^)]*)\)"#, "$1"),
+        (#"\[([^\]]+)\]\(([^)]*)\)"#, "$1"),
+        (#"`([^`]+)`"#, "$1"),
+        (#"[*_~>#-]+"#, " ")
+    ]
+
+    let cleaned = replacements.reduce(withoutHeading) { partial, item in
+        partial.replacingOccurrences(
+            of: item.0,
+            with: item.1,
+            options: .regularExpression
+        )
+    }
+
+    return cleaned
+        .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+}
+
+private func firstCapturedValue(in line: String, pattern: String) -> String? {
+    guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
+    let source = line as NSString
+    let range = NSRange(location: 0, length: source.length)
+    guard let match = regex.firstMatch(in: line, range: range), match.numberOfRanges > 1 else {
+        return nil
+    }
+    return source.substring(with: match.range(at: 1))
 }
 
 private func displayDate(from isoDate: String) -> String {
