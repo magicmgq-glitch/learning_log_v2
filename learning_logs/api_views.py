@@ -27,9 +27,8 @@ from .upload_limits import (
     video_upload_max_mb,
 )
 from .video_processing import (
-    VideoProcessingError,
-    attach_transcoded_video,
-    save_transcoded_video_to_storage,
+    attach_video_and_enqueue_transcode,
+    save_video_and_enqueue_transcode,
 )
 
 
@@ -172,10 +171,7 @@ def upload_markdown_video(request):
     if too_large_response:
         return too_large_response
 
-    try:
-        filename = save_transcoded_video_to_storage(upload, 'editor/videos')
-    except VideoProcessingError as error:
-        return JsonResponse({'error': str(error)}, status=400)
+    filename = save_video_and_enqueue_transcode(upload, 'editor/videos')
 
     absolute_url = request.build_absolute_uri(default_storage.url(filename))
 
@@ -337,10 +333,10 @@ def entry_list(request, topic_id):
 
     if video_upload:
         try:
-            attach_transcoded_video(entry, video_upload)
-        except VideoProcessingError as error:
+            attach_video_and_enqueue_transcode(entry, video_upload)
+        except Exception:
             entry.delete()
-            return JsonResponse({'error': str(error)}, status=400)
+            return JsonResponse({'error': '视频上传失败，请稍后重试。'}, status=500)
 
     return JsonResponse({'entry': serialize_entry(request, entry)}, status=201)
 

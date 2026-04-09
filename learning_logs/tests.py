@@ -6,7 +6,6 @@ from unittest.mock import patch
 
 from django.conf import settings
 from django.contrib.auth.models import User
-from django.core.files.base import ContentFile
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import Client, TestCase, override_settings
 from django.urls import reverse
@@ -172,16 +171,17 @@ class EntryApiTests(TestCase):
             Entry.objects.filter(topic=self.topic, text='Built the first entry API.').exists()
         )
 
-    @patch('learning_logs.api_views.attach_transcoded_video')
-    def test_create_entry_with_video_uses_transcoded_file(self, mock_attach_transcoded_video):
+    @patch('learning_logs.api_views.attach_video_and_enqueue_transcode')
+    def test_create_entry_with_video_uses_async_video_pipeline(self, mock_attach_video):
         with tempfile.TemporaryDirectory() as media_dir:
             with self.settings(MEDIA_ROOT=media_dir, MEDIA_URL='/media/'):
                 self.client.login(username='alice', password='secret123')
 
                 def fake_attach(entry, uploaded_file):
-                    entry.video.save('videos/transcoded.mp4', ContentFile(b'transcoded-video'), save=True)
+                    entry.video = 'videos/queued.mov'
+                    entry.save(update_fields=['video'])
 
-                mock_attach_transcoded_video.side_effect = fake_attach
+                mock_attach_video.side_effect = fake_attach
 
                 response = self.client.post(
                     reverse('learning_logs_api:entry_list', kwargs={'topic_id': self.topic.id}),
@@ -194,7 +194,7 @@ class EntryApiTests(TestCase):
                 self.assertEqual(response.status_code, 201)
                 payload = response.json()
                 self.assertIn('/media/videos/', payload['entry']['video_url'])
-                self.assertTrue(payload['entry']['video_url'].endswith('.mp4'))
+                self.assertTrue(payload['entry']['video_url'].endswith('.mov'))
 
     @override_settings(IMAGE_UPLOAD_MAX_BYTES=16)
     def test_create_entry_rejects_oversized_image(self):
@@ -535,8 +535,8 @@ class ImagePreviewApiTests(TestCase):
         Image.new('RGB', size, color=(120, 180, 220)).save(buffer, format=image_format)
         return buffer.getvalue()
 
-    @patch('learning_logs.api_views.save_transcoded_video_to_storage')
-    def test_upload_markdown_video_with_bearer_token(self, mock_save_transcoded_video):
+    @patch('learning_logs.api_views.save_video_and_enqueue_transcode')
+    def test_upload_markdown_video_with_bearer_token(self, mock_save_video):
         with tempfile.TemporaryDirectory() as media_dir:
             with self.settings(MEDIA_ROOT=media_dir, MEDIA_URL='/media/'):
                 token_response = self.client.post(
@@ -546,7 +546,7 @@ class ImagePreviewApiTests(TestCase):
                 )
                 access = token_response.json()['access']
 
-                mock_save_transcoded_video.side_effect = self.fake_save_transcoded_video
+                mock_save_video.side_effect = self.fake_save_video
 
                 mp4_data = b'\x00\x00\x00\x18ftypmp42\x00\x00\x00\x00mp42isom'
                 upload = SimpleUploadedFile('inline.mp4', mp4_data, content_type='video/mp4')
@@ -588,11 +588,11 @@ class ImagePreviewApiTests(TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn('Video file exceeds', response.json()['error'])
 
-    def fake_save_transcoded_video(self, uploaded_file, directory):
-        relative_path = f'{directory}/transcoded.mp4'
+    def fake_save_video(self, uploaded_file, directory):
+        relative_path = f'{directory}/queued.mp4'
         destination = Path(settings.MEDIA_ROOT) / relative_path
         destination.parent.mkdir(parents=True, exist_ok=True)
-        destination.write_bytes(b'transcoded-video')
+        destination.write_bytes(b'queued-video')
         return relative_path
 
 

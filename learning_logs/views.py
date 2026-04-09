@@ -6,7 +6,7 @@ from django.shortcuts import render, redirect
 from .models import Topic, Entry
 from .forms import TopicForm, EntryForm  # 导入我们刚才写的表单
 from .upload_limits import image_upload_max_bytes, image_upload_max_mb, is_file_too_large
-from .video_processing import VideoProcessingError, attach_transcoded_video
+from .video_processing import attach_video_and_enqueue_transcode
 
 # Create your views here.
 def index(request):
@@ -92,10 +92,10 @@ def new_entry(request, topic_id):
             new_entry.save()
             if uploaded_video:
                 try:
-                    attach_transcoded_video(new_entry, uploaded_video)
-                except VideoProcessingError:
+                    attach_video_and_enqueue_transcode(new_entry, uploaded_video)
+                except Exception:
                     new_entry.delete()
-                    form.add_error('video', '视频转码失败，请换一个视频再试。')
+                    form.add_error('video', '视频上传失败，请稍后重试。')
                     context = {'topic': topic, 'form': form}
                     return render(request, 'learning_logs/new_entry.html', context)
 
@@ -135,9 +135,9 @@ def edit_entry(request, entry_id):
             updated_entry.save()
             if uploaded_video:
                 try:
-                    attach_transcoded_video(updated_entry, uploaded_video)
-                except VideoProcessingError:
-                    form.add_error('video', '视频转码失败，请换一个视频再试。')
+                    attach_video_and_enqueue_transcode(updated_entry, uploaded_video)
+                except Exception:
+                    form.add_error('video', '视频上传失败，请稍后重试。')
                     context = {'entry': entry, 'topic': topic, 'form': form}
                     return render(request, 'learning_logs/edit_entry.html', context)
             # 修改成功后，跳回到该主题的详情页去查看最新结果
