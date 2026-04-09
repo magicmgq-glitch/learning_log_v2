@@ -74,6 +74,13 @@ final class SessionStore: ObservableObject {
         }
     }
 
+    func createTopic(text: String) async throws -> Topic {
+        let response = try await performAuthorizedRequest { accessToken in
+            try await self.apiClient.createTopic(text: text, accessToken: accessToken)
+        }
+        return response.topic
+    }
+
     func updateTopic(topicID: Int, text: String) async throws -> Topic {
         let response = try await performAuthorizedRequest { accessToken in
             try await self.apiClient.updateTopic(

@@ -2,6 +2,10 @@ import SwiftUI
 
 struct TopicListView: View {
     @EnvironmentObject private var session: SessionStore
+    @State private var showingNewTopicSheet = false
+    @State private var newTopicText = ""
+    @State private var newTopicErrorMessage = ""
+    @State private var isSubmittingNewTopic = false
 
     var body: some View {
         ScrollView {
@@ -36,6 +40,12 @@ struct TopicListView: View {
             }
 
             ToolbarItemGroup(placement: .topBarTrailing) {
+                Button("新建") {
+                    newTopicText = ""
+                    newTopicErrorMessage = ""
+                    showingNewTopicSheet = true
+                }
+
                 Button("刷新") {
                     Task {
                         await session.reloadTopics()
@@ -48,6 +58,46 @@ struct TopicListView: View {
             }
         }
         .navigationTitle("学习主题")
+        .sheet(isPresented: $showingNewTopicSheet) {
+            NavigationStack {
+                VStack(alignment: .leading, spacing: 12) {
+                    TextField("主题名称", text: $newTopicText)
+                        .textFieldStyle(.roundedBorder)
+
+                    if !newTopicErrorMessage.isEmpty {
+                        Text(newTopicErrorMessage)
+                            .font(.subheadline)
+                            .foregroundStyle(.red)
+                    }
+
+                    Spacer()
+                }
+                .padding(16)
+                .navigationTitle("新建主题")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button("取消") {
+                            showingNewTopicSheet = false
+                        }
+                    }
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button {
+                            Task {
+                                await submitNewTopic()
+                            }
+                        } label: {
+                            if isSubmittingNewTopic {
+                                ProgressView()
+                            } else {
+                                Text("保存")
+                            }
+                        }
+                        .disabled(isSubmittingNewTopic)
+                    }
+                }
+            }
+        }
     }
 
     private var emptyState: some View {
@@ -69,6 +119,25 @@ struct TopicListView: View {
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .fill(Color(.secondarySystemGroupedBackground))
         )
+    }
+
+    private func submitNewTopic() async {
+        let trimmed = newTopicText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            newTopicErrorMessage = "主题名称不能为空。"
+            return
+        }
+
+        isSubmittingNewTopic = true
+        newTopicErrorMessage = ""
+        do {
+            let topic = try await session.createTopic(text: trimmed)
+            session.topics.append(topic)
+            showingNewTopicSheet = false
+        } catch {
+            newTopicErrorMessage = error.localizedDescription
+        }
+        isSubmittingNewTopic = false
     }
 }
 

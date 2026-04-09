@@ -24,6 +24,10 @@ private struct TopicUpdateRequest: Encodable {
     let text: String
 }
 
+private struct TopicCreateRequest: Encodable {
+    let text: String
+}
+
 private struct EntryCreateRequest: Encodable {
     let text: String
 }
@@ -173,6 +177,17 @@ final class APIClient {
             body: Optional<String>.none,
             accessToken: accessToken,
             responseType: TopicDetailResponse.self
+        )
+    }
+
+    func createTopic(text: String, accessToken: String) async throws -> TopicResponse {
+        let requestBody = TopicCreateRequest(text: text)
+        return try await send(
+            path: "/api/v1/topics/",
+            method: "POST",
+            body: requestBody,
+            accessToken: accessToken,
+            responseType: TopicResponse.self
         )
     }
 
@@ -327,6 +342,9 @@ final class APIClient {
         }
 
         if !(200...299).contains(httpResponse.statusCode) {
+            if httpResponse.statusCode >= 500 {
+                throw APIError.server("视频已上传，但服务器转码超时。请稍后重试。")
+            }
             let message = userFriendlyServerMessage(
                 statusCode: httpResponse.statusCode,
                 data: data,
@@ -353,7 +371,10 @@ final class APIClient {
 
         onProgress(0)
         let delegate = UploadProgressDelegate(onProgress: onProgress)
-        let session = URLSession(configuration: .default, delegate: delegate, delegateQueue: nil)
+        let configuration = URLSessionConfiguration.default
+        configuration.timeoutIntervalForRequest = 15 * 60
+        configuration.timeoutIntervalForResource = 30 * 60
+        let session = URLSession(configuration: configuration, delegate: delegate, delegateQueue: nil)
         defer {
             session.finishTasksAndInvalidate()
         }
