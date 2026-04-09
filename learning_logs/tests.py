@@ -2,8 +2,11 @@ import json
 import tempfile
 from io import BytesIO
 from pathlib import Path
+from unittest.mock import patch
 
+from django.conf import settings
 from django.contrib.auth.models import User
+from django.core.files.base import ContentFile
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import Client, TestCase, override_settings
 from django.urls import reverse
@@ -168,6 +171,30 @@ class EntryApiTests(TestCase):
         self.assertTrue(
             Entry.objects.filter(topic=self.topic, text='Built the first entry API.').exists()
         )
+
+    @patch('learning_logs.api_views.attach_transcoded_video')
+    def test_create_entry_with_video_uses_transcoded_file(self, mock_attach_transcoded_video):
+        with tempfile.TemporaryDirectory() as media_dir:
+            with self.settings(MEDIA_ROOT=media_dir, MEDIA_URL='/media/'):
+                self.client.login(username='alice', password='secret123')
+
+                def fake_attach(entry, uploaded_file):
+                    entry.video.save('videos/transcoded.mp4', ContentFile(b'transcoded-video'), save=True)
+
+                mock_attach_transcoded_video.side_effect = fake_attach
+
+                response = self.client.post(
+                    reverse('learning_logs_api:entry_list', kwargs={'topic_id': self.topic.id}),
+                    data={
+                        'text': 'Video note',
+                        'video': SimpleUploadedFile('raw.mov', b'video-source', content_type='video/quicktime'),
+                    },
+                )
+
+                self.assertEqual(response.status_code, 201)
+                payload = response.json()
+                self.assertIn('/media/videos/', payload['entry']['video_url'])
+                self.assertTrue(payload['entry']['video_url'].endswith('.mp4'))
 
     @override_settings(IMAGE_UPLOAD_MAX_BYTES=16)
     def test_create_entry_rejects_oversized_image(self):
@@ -508,28 +535,34 @@ class ImagePreviewApiTests(TestCase):
         Image.new('RGB', size, color=(120, 180, 220)).save(buffer, format=image_format)
         return buffer.getvalue()
 
-    def test_upload_markdown_video_with_bearer_token(self):
-        token_response = self.client.post(
-            reverse('token_obtain_pair'),
-            data={'username': 'alice', 'password': 'secret123'},
-            content_type='application/json',
-        )
-        access = token_response.json()['access']
+    @patch('learning_logs.api_views.save_transcoded_video_to_storage')
+    def test_upload_markdown_video_with_bearer_token(self, mock_save_transcoded_video):
+        with tempfile.TemporaryDirectory() as media_dir:
+            with self.settings(MEDIA_ROOT=media_dir, MEDIA_URL='/media/'):
+                token_response = self.client.post(
+                    reverse('token_obtain_pair'),
+                    data={'username': 'alice', 'password': 'secret123'},
+                    content_type='application/json',
+                )
+                access = token_response.json()['access']
 
-        mp4_data = b'\x00\x00\x00\x18ftypmp42\x00\x00\x00\x00mp42isom'
-        upload = SimpleUploadedFile('inline.mp4', mp4_data, content_type='video/mp4')
+                mock_save_transcoded_video.side_effect = self.fake_save_transcoded_video
 
-        response = self.client.post(
-            reverse('learning_logs_api:upload_markdown_video'),
-            data={'video': upload},
-            headers={'Authorization': f'Bearer {access}'},
-        )
+                mp4_data = b'\x00\x00\x00\x18ftypmp42\x00\x00\x00\x00mp42isom'
+                upload = SimpleUploadedFile('inline.mp4', mp4_data, content_type='video/mp4')
 
-        self.assertEqual(response.status_code, 201)
-        payload = response.json()
-        self.assertIn('data', payload)
-        self.assertIn('filePath', payload['data'])
-        self.assertTrue(payload['data']['filePath'].startswith('http'))
+                response = self.client.post(
+                    reverse('learning_logs_api:upload_markdown_video'),
+                    data={'video': upload},
+                    headers={'Authorization': f'Bearer {access}'},
+                )
+
+                self.assertEqual(response.status_code, 201)
+                payload = response.json()
+                self.assertIn('data', payload)
+                self.assertIn('filePath', payload['data'])
+                self.assertTrue(payload['data']['filePath'].startswith('http'))
+                self.assertTrue(payload['data']['filePath'].endswith('.mp4'))
 
     @override_settings(VIDEO_UPLOAD_MAX_BYTES=16)
     def test_upload_markdown_video_rejects_oversized_file(self):
@@ -554,3 +587,85 @@ class ImagePreviewApiTests(TestCase):
 
         self.assertEqual(response.status_code, 400)
         self.assertIn('Video file exceeds', response.json()['error'])
+
+    def fake_save_transcoded_video(self, uploaded_file, directory):
+        relative_path = f'{directory}/transcoded.mp4'
+        destination = Path(settings.MEDIA_ROOT) / relative_path
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(b'transcoded-video')
+        return relative_path
+
+
+class EmbeddedMediaCleanupTests(TestCase):
+    def setUp(self):
+        self.media_dir = tempfile.TemporaryDirectory()
+        self.media_override = override_settings(
+            MEDIA_ROOT=self.media_dir.name,
+            MEDIA_URL='/media/',
+        )
+        self.media_override.enable()
+
+        self.user = User.objects.create_user(username='alice', password='secret123')
+        self.topic = Topic.objects.create(text='Python', owner=self.user)
+
+    def tearDown(self):
+        self.media_override.disable()
+        self.media_dir.cleanup()
+
+    def test_delete_entry_removes_unreferenced_embedded_media_files(self):
+        image_path = self.create_media_file('editor/test-image.jpg', b'image-data')
+        video_path = self.create_media_file('editor/videos/test-video.mp4', b'video-data')
+        self.create_media_file('previews/card/editor/test-image-jpg.jpg', b'preview-card')
+        self.create_media_file('previews/detail/editor/test-image-jpg.jpg', b'preview-detail')
+
+        entry = Entry.objects.create(
+            topic=self.topic,
+            text=(
+                '![图片](http://testserver/media/editor/test-image.jpg)\n'
+                '@[video](http://testserver/media/editor/videos/test-video.mp4)\n'
+            ),
+        )
+
+        entry.delete()
+
+        self.assertFalse(image_path.exists())
+        self.assertFalse(video_path.exists())
+        self.assertFalse((Path(self.media_dir.name) / 'previews' / 'card' / 'editor' / 'test-image-jpg.jpg').exists())
+        self.assertFalse((Path(self.media_dir.name) / 'previews' / 'detail' / 'editor' / 'test-image-jpg.jpg').exists())
+
+    def test_edit_entry_removes_old_embedded_media_when_no_longer_referenced(self):
+        image_path = self.create_media_file('editor/old-image.jpg', b'image-data')
+
+        entry = Entry.objects.create(
+            topic=self.topic,
+            text='![图片](http://testserver/media/editor/old-image.jpg)\n',
+        )
+
+        entry.text = '新的纯文本内容'
+        entry.save()
+
+        self.assertFalse(image_path.exists())
+
+    def test_shared_embedded_media_is_not_deleted_while_other_entry_still_references_it(self):
+        image_path = self.create_media_file('editor/shared-image.jpg', b'image-data')
+
+        first_entry = Entry.objects.create(
+            topic=self.topic,
+            text='![图片](http://testserver/media/editor/shared-image.jpg)\n',
+        )
+        second_entry = Entry.objects.create(
+            topic=self.topic,
+            text='![图片](http://testserver/media/editor/shared-image.jpg)\n',
+        )
+
+        first_entry.delete()
+        self.assertTrue(image_path.exists())
+
+        second_entry.delete()
+        self.assertFalse(image_path.exists())
+
+    def create_media_file(self, relative_path, content):
+        path = Path(self.media_dir.name) / relative_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(content)
+        return path

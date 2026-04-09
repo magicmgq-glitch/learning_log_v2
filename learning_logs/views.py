@@ -6,6 +6,7 @@ from django.shortcuts import render, redirect
 from .models import Topic, Entry
 from .forms import TopicForm, EntryForm  # 导入我们刚才写的表单
 from .upload_limits import image_upload_max_bytes, image_upload_max_mb, is_file_too_large
+from .video_processing import VideoProcessingError, attach_transcoded_video
 
 # Create your views here.
 def index(request):
@@ -79,13 +80,24 @@ def new_entry(request, topic_id):
         if form.is_valid():
             # commit=False 的意思是：先别急着存进数据库，让我再加点料！
             new_entry = form.save(commit=False)
+            uploaded_video = request.FILES.get('video')
 
             # 关键步骤：把刚才查到的 topic 对象，强行赋值给这个新条目的 topic 属性
             # 这就相当于用胶水把它们粘在了一起
             new_entry.topic = topic
+            if uploaded_video:
+                new_entry.video = None
 
             # 绑定好之后，再正式存入数据库
             new_entry.save()
+            if uploaded_video:
+                try:
+                    attach_transcoded_video(new_entry, uploaded_video)
+                except VideoProcessingError:
+                    new_entry.delete()
+                    form.add_error('video', '视频转码失败，请换一个视频再试。')
+                    context = {'topic': topic, 'form': form}
+                    return render(request, 'learning_logs/new_entry.html', context)
 
             # 保存成功后，重定向回那个主题的详情页，并带上 topic.id
             return redirect('learning_logs:topic', topic_id=topic.id)
@@ -116,7 +128,18 @@ def edit_entry(request, entry_id):
         # 意思是：请用用户新提交的 data，去覆盖掉这个 entry 原本的旧数据
         form = EntryForm(instance=entry, data=request.POST, files=request.FILES)
         if form.is_valid():
-            form.save()
+            updated_entry = form.save(commit=False)
+            uploaded_video = request.FILES.get('video')
+            if uploaded_video:
+                updated_entry.video = None
+            updated_entry.save()
+            if uploaded_video:
+                try:
+                    attach_transcoded_video(updated_entry, uploaded_video)
+                except VideoProcessingError:
+                    form.add_error('video', '视频转码失败，请换一个视频再试。')
+                    context = {'entry': entry, 'topic': topic, 'form': form}
+                    return render(request, 'learning_logs/edit_entry.html', context)
             # 修改成功后，跳回到该主题的详情页去查看最新结果
             return redirect('learning_logs:topic', topic_id=topic.id)
 

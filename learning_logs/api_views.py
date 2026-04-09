@@ -26,6 +26,11 @@ from .upload_limits import (
     video_upload_max_bytes,
     video_upload_max_mb,
 )
+from .video_processing import (
+    VideoProcessingError,
+    attach_transcoded_video,
+    save_transcoded_video_to_storage,
+)
 
 
 def api_login_required(view_func):
@@ -167,8 +172,11 @@ def upload_markdown_video(request):
     if too_large_response:
         return too_large_response
 
-    suffix = Path(upload.name).suffix or '.mp4'
-    filename = default_storage.save(f'editor/videos/{uuid4().hex}{suffix}', upload)
+    try:
+        filename = save_transcoded_video_to_storage(upload, 'editor/videos')
+    except VideoProcessingError as error:
+        return JsonResponse({'error': str(error)}, status=400)
+
     absolute_url = request.build_absolute_uri(default_storage.url(filename))
 
     return JsonResponse(
@@ -323,9 +331,17 @@ def entry_list(request, topic_id):
         topic=topic,
         text=text,
         image=image_upload,
-        video=video_upload,
+        video=None,
         document=document_upload,
     )
+
+    if video_upload:
+        try:
+            attach_transcoded_video(entry, video_upload)
+        except VideoProcessingError as error:
+            entry.delete()
+            return JsonResponse({'error': str(error)}, status=400)
+
     return JsonResponse({'entry': serialize_entry(request, entry)}, status=201)
 
 
