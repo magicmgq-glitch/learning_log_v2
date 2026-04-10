@@ -10,6 +10,7 @@ class Topic(models.Model):
     date_added = models.DateTimeField(auto_now_add=True)
     # 核心：将主题与用户绑定。CASCADE意味着如果用户被删除，他所有的主题也会被跟着删除
     owner = models.ForeignKey(User, on_delete=models.CASCADE)
+    is_public = models.BooleanField(default=False, verbose_name='公开主题')
 
     def __str__(self):
         """告诉Django，在后台显示这个模型时，直接显示主题的名称"""
@@ -27,6 +28,7 @@ class Entry(models.Model):
     image = models.ImageField(upload_to='images/', blank=True, null=True, verbose_name='插入图片')
     video = models.FileField(upload_to='videos/', blank=True, null=True, verbose_name='插入视频')
     document = models.FileField(upload_to='documents/', blank=True, null=True, verbose_name='上传附件')
+    is_public = models.BooleanField(default=False, verbose_name='公开笔记')
 
     class Meta:
         """这是一个特殊的内容类，用来告诉Django模型的复数拼写"""

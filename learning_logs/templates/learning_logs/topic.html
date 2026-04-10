@@ -37,7 +37,12 @@
     <div class="d-flex justify-content-between align-items-center mb-4 pb-2 border-bottom">
 
         <div class="d-flex align-items-center gap-3 text-truncate">
-            <h2 class="text-primary fw-bold mb-0 text-truncate">{{ topic.text }}</h2>
+            <h2 class="text-primary fw-bold mb-0 text-truncate">
+                {{ topic.text }}
+                {% if topic.is_public %}
+                    <span class="badge text-bg-success align-middle ms-2">主题已公开</span>
+                {% endif %}
+            </h2>
 
             <div class="d-none d-md-flex gap-2">
                 <a href="{% url 'learning_logs:edit_topic' topic.id %}" class="btn btn-sm btn-outline-primary">✎ 修改主题</a>
@@ -92,7 +97,12 @@
             <div class="card mb-4 shadow-sm border-0">
 
                 <div class="card-header bg-light d-flex justify-content-between align-items-center border-0 py-2">
-                    <span class="text-muted small">记录于：{{ entry.date_added|date:'Y年m月d日 H:i' }}</span>
+                    <span class="text-muted small">
+                        记录于：{{ entry.date_added|date:'Y年m月d日 H:i' }}
+                        {% if topic.is_public or entry.is_public %}
+                            <span class="badge text-bg-success ms-2">公开</span>
+                        {% endif %}
+                    </span>
 
                     <div class="d-flex gap-2 align-items-center">
                         <a href="{% url 'learning_logs:edit_entry' entry.id %}" class="btn btn-sm btn-outline-secondary">

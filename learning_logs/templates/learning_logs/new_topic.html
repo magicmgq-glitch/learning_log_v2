@@ -9,7 +9,8 @@
                     <h3 class="card-title text-center mb-4 fw-bold">添加新主题</h3>
                     <form action="{% url 'learning_logs:new_topic' %}" method="post">
                         {% csrf_token %}
-                        {% bootstrap_form form %}
+                        {% bootstrap_field form.text %}
+                        {% bootstrap_field form.is_public %}
                         <div class="d-flex justify-content-between mt-4">
                             <a href="{% url 'learning_logs:topics' %}" class="btn btn-outline-secondary">返回列表</a>
                             <button type="submit" class="btn btn-primary px-4">保存主题</button>

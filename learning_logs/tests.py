@@ -91,6 +91,19 @@ class TopicApiTests(TestCase):
         self.topic.refresh_from_db()
         self.assertEqual(self.topic.text, 'Python Advanced')
 
+    def test_update_topic_with_patch_can_toggle_public(self):
+        self.client.login(username='alice', password='secret123')
+
+        response = self.client.patch(
+            reverse('learning_logs_api:topic_detail', kwargs={'topic_id': self.topic.id}),
+            data=json.dumps({'is_public': True}),
+            content_type='application/json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.topic.refresh_from_db()
+        self.assertTrue(self.topic.is_public)
+
     def test_replace_topic_with_put_requires_text(self):
         self.client.login(username='alice', password='secret123')
 
@@ -269,6 +282,39 @@ class EntryApiTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertFalse(Entry.objects.filter(id=self.entry.id).exists())
+
+    def test_update_entry_with_patch_can_toggle_public(self):
+        self.client.login(username='alice', password='secret123')
+
+        response = self.client.patch(
+            reverse('learning_logs_api:entry_detail', kwargs={'entry_id': self.entry.id}),
+            data=json.dumps({'is_public': True}),
+            content_type='application/json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.entry.refresh_from_db()
+        self.assertTrue(self.entry.is_public)
+
+    def test_ai_alias_topic_create_and_entry_create(self):
+        self.client.login(username='alice', password='secret123')
+
+        topic_response = self.client.post(
+            reverse('learning_logs_api:ai_topic_list'),
+            data=json.dumps({'text': 'AI Topic', 'is_public': True}),
+            content_type='application/json',
+        )
+        self.assertEqual(topic_response.status_code, 201)
+        topic_id = topic_response.json()['topic']['id']
+        self.assertTrue(topic_response.json()['topic']['is_public'])
+
+        entry_response = self.client.post(
+            reverse('learning_logs_api:ai_entry_list', kwargs={'topic_id': topic_id}),
+            data=json.dumps({'text': 'AI Entry', 'is_public': True}),
+            content_type='application/json',
+        )
+        self.assertEqual(entry_response.status_code, 201)
+        self.assertTrue(entry_response.json()['entry']['is_public'])
 
 
 class JwtAuthTests(TestCase):
@@ -456,6 +502,81 @@ class JwtAuthTests(TestCase):
 
         self.assertEqual(response.status_code, 400)
         self.assertIn('Image file exceeds', response.json()['error'])
+
+
+class PublicApiTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username='alice', password='secret123')
+        private_topic = Topic.objects.create(text='Private Topic', owner=self.user, is_public=False)
+        public_topic = Topic.objects.create(text='Public Topic', owner=self.user, is_public=True)
+
+        Entry.objects.create(topic=private_topic, text='Private entry', is_public=False)
+        Entry.objects.create(topic=private_topic, text='Entry-only public', is_public=True)
+        Entry.objects.create(topic=public_topic, text='Topic public entry', is_public=False)
+
+    def test_public_topics_returns_only_public_topics(self):
+        response = self.client.get(reverse('learning_logs_api:public_topic_list'))
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(len(payload['topics']), 1)
+        self.assertEqual(payload['topics'][0]['text'], 'Public Topic')
+        self.assertIn('owner_username', payload['topics'][0])
+
+    def test_public_entries_returns_entry_public_or_topic_public(self):
+        response = self.client.get(reverse('learning_logs_api:public_entry_list'))
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        texts = {entry['text'] for entry in payload['entries']}
+        self.assertIn('Entry-only public', texts)
+        self.assertIn('Topic public entry', texts)
+        self.assertNotIn('Private entry', texts)
+
+
+class PublicWebViewTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username='alice', password='secret123')
+        private_topic = Topic.objects.create(text='Private Topic', owner=self.user, is_public=False)
+        public_topic = Topic.objects.create(text='Public Topic', owner=self.user, is_public=True)
+
+        self.private_entry = Entry.objects.create(topic=private_topic, text='Private entry', is_public=False)
+        self.entry_only_public = Entry.objects.create(topic=private_topic, text='Entry-only public', is_public=True)
+        self.topic_public_entry = Entry.objects.create(topic=public_topic, text='Topic public entry', is_public=False)
+
+    def test_public_feed_page_allows_anonymous_access(self):
+        response = self.client.get(reverse('learning_logs:public_feed'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, '笔记广场')
+        self.assertContains(response, 'Entry-only public')
+        self.assertContains(response, 'Topic public entry')
+        self.assertNotContains(response, 'Private entry')
+
+    def test_index_page_shows_latest_public_entries(self):
+        response = self.client.get(reverse('learning_logs:index'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, '最新笔记')
+        self.assertContains(response, '进入笔记广场')
+        self.assertContains(response, 'Entry-only public')
+        self.assertContains(response, 'Topic public entry')
+        self.assertNotContains(response, 'Private entry')
+
+    def test_public_entry_detail_allows_public_entry(self):
+        response = self.client.get(
+            reverse('learning_logs:public_entry_detail', kwargs={'entry_id': self.entry_only_public.id})
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Entry-only public')
+
+    def test_public_entry_detail_rejects_private_entry(self):
+        response = self.client.get(
+            reverse('learning_logs:public_entry_detail', kwargs={'entry_id': self.private_entry.id})
+        )
+
+        self.assertEqual(response.status_code, 404)
 
 
 class ImagePreviewApiTests(TestCase):

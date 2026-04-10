@@ -93,7 +93,8 @@ Example request:
 
 ```json
 {
-  "text": "Python"
+  "text": "Python",
+  "is_public": false
 }
 ```
 
@@ -110,7 +111,8 @@ Example request:
 
 ```json
 {
-  "text": "Python Advanced"
+  "text": "Python Advanced",
+  "is_public": true
 }
 ```
 
@@ -134,7 +136,8 @@ Text-only example:
 
 ```json
 {
-  "text": "Learned how JWT works."
+  "text": "Learned how JWT works.",
+  "is_public": false
 }
 ```
 
@@ -152,6 +155,7 @@ Example request:
 ```json
 {
   "text": "Updated note",
+  "is_public": true,
   "clear_image": true
 }
 ```
@@ -159,6 +163,28 @@ Example request:
 ### Delete Entry
 
 - `DELETE /api/v1/entries/<entry_id>/`
+
+## Public Feed APIs (No Login Required)
+
+### Public Topics
+
+- `GET /api/v1/public/topics/`
+- Returns topics with `is_public=true`.
+
+### Public Entries
+
+- `GET /api/v1/public/entries/`
+- Returns entries that match either condition:
+  - `entry.is_public=true`
+  - `entry.topic.is_public=true`
+
+## AI-Friendly Alias APIs
+
+These are aliases of existing authenticated write APIs, useful for AI tools:
+
+- `POST /api/v1/ai/topics/` (same as `POST /api/v1/topics/`)
+- `POST /api/v1/ai/topics/<topic_id>/entries/` (same as `POST /api/v1/topics/<topic_id>/entries/`)
+- `PATCH /api/v1/ai/entries/<entry_id>/` (same as `PATCH /api/v1/entries/<entry_id>/`)
 
 ## iOS Notes
 

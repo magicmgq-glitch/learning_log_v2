@@ -1,6 +1,7 @@
 from django.http import JsonResponse
 from django.core.files.storage import default_storage
 from django.contrib.auth.decorators import login_required
+from django.db.models import Q
 from django.http import Http404
 from django.shortcuts import render, redirect
 from .models import Topic, Entry
@@ -11,8 +12,38 @@ from .video_processing import attach_video_and_enqueue_transcode
 # Create your views here.
 def index(request):
     """学习笔记的主页"""
-    # 接收到请求后，直接渲染并返回index.html模板
-    return render(request, 'learning_logs/index.html')
+    latest_public_entries = (
+        Entry.objects.filter(Q(is_public=True) | Q(topic__is_public=True))
+        .select_related('topic', 'topic__owner')
+        .order_by('-date_added')[:5]
+    )
+    context = {'latest_public_entries': latest_public_entries}
+    return render(request, 'learning_logs/index.html', context)
+
+
+def public_feed(request):
+    """公开笔记广场：任何人都可以浏览。"""
+    entries = (
+        Entry.objects.filter(Q(is_public=True) | Q(topic__is_public=True))
+        .select_related('topic', 'topic__owner')
+        .order_by('-date_added')[:80]
+    )
+    context = {'entries': entries}
+    return render(request, 'learning_logs/public_feed.html', context)
+
+
+def public_entry_detail(request, entry_id):
+    """公开笔记详情页：仅允许访问公开内容。"""
+    entry = (
+        Entry.objects.filter(id=entry_id)
+        .filter(Q(is_public=True) | Q(topic__is_public=True))
+        .select_related('topic', 'topic__owner')
+        .first()
+    )
+    if entry is None:
+        raise Http404
+    context = {'entry': entry}
+    return render(request, 'learning_logs/public_entry_detail.html', context)
 
 @login_required
 def topics(request):

@@ -4,6 +4,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from django.core.files.storage import default_storage
+from django.db.models import Q
 from django.http import FileResponse, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
@@ -61,23 +62,35 @@ def build_file_url(request, field_file):
     return request.build_absolute_uri(field_file.url)
 
 
-def serialize_topic(topic):
-    return {
+def serialize_topic(topic, include_owner=False):
+    data = {
         'id': topic.id,
         'text': topic.text,
         'date_added': topic.date_added.isoformat(),
+        'is_public': topic.is_public,
     }
+    if include_owner:
+        data['owner_username'] = topic.owner.username
+    return data
 
 
-def serialize_entry(request, entry):
-    return {
+def serialize_entry(request, entry, include_owner=False):
+    data = {
         'id': entry.id,
+        'topic_id': entry.topic_id,
+        'topic_text': entry.topic.text,
+        'topic_is_public': entry.topic.is_public,
         'text': entry.text,
         'date_added': entry.date_added.isoformat(),
+        'is_public': entry.is_public,
+        'effective_is_public': bool(entry.is_public or entry.topic.is_public),
         'image_url': build_file_url(request, entry.image),
         'video_url': build_file_url(request, entry.video),
         'document_url': build_file_url(request, entry.document),
     }
+    if include_owner:
+        data['owner_username'] = entry.topic.owner.username
+    return data
 
 
 def get_request_data(request):
@@ -97,10 +110,29 @@ def get_owned_entry(user, entry_id):
     return Entry.objects.filter(id=entry_id, topic__owner=user).select_related('topic').first()
 
 
+def parse_optional_bool(value):
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {'1', 'true', 'yes', 'on'}:
+            return True
+        if normalized in {'0', 'false', 'no', 'off', ''}:
+            return False
+    return None
+
+
 def apply_entry_updates(entry, data):
     text = data.get('text')
     if text is not None:
         entry.text = text.strip()
+    is_public = parse_optional_bool(data.get('is_public'))
+    if is_public is not None:
+        entry.is_public = is_public
 
     if data.get('clear_image'):
         entry.image.delete(save=False)
@@ -208,6 +240,22 @@ def image_preview(request):
     return response
 
 
+@require_http_methods(['GET'])
+def public_topic_list(request):
+    topics = Topic.objects.filter(is_public=True).select_related('owner').order_by('-date_added')
+    return JsonResponse({'topics': [serialize_topic(topic, include_owner=True) for topic in topics]})
+
+
+@require_http_methods(['GET'])
+def public_entry_list(request):
+    entries = (
+        Entry.objects.filter(Q(is_public=True) | Q(topic__is_public=True))
+        .select_related('topic', 'topic__owner')
+        .order_by('-date_added')
+    )
+    return JsonResponse({'entries': [serialize_entry(request, entry, include_owner=True) for entry in entries]})
+
+
 @csrf_exempt
 @api_login_required
 @require_http_methods(['GET', 'POST'])
@@ -224,7 +272,11 @@ def topic_list(request):
     if not text:
         return JsonResponse({'error': 'Topic text is required.'}, status=400)
 
-    topic = Topic.objects.create(text=text, owner=request.user)
+    topic = Topic.objects.create(
+        text=text,
+        owner=request.user,
+        is_public=bool(parse_optional_bool(data.get('is_public'))),
+    )
     return JsonResponse({'topic': serialize_topic(topic)}, status=201)
 
 
@@ -254,10 +306,11 @@ def topic_detail(request, topic_id):
         return JsonResponse({'error': 'Invalid JSON payload.'}, status=400)
 
     text = data.get('text')
+    visibility = parse_optional_bool(data.get('is_public'))
     if request.method == 'PUT':
         if not (text or '').strip():
             return JsonResponse({'error': 'Topic text is required.'}, status=400)
-    elif text is None:
+    elif text is None and visibility is None:
         return JsonResponse({'error': 'No fields to update.'}, status=400)
 
     if text is not None:
@@ -265,7 +318,9 @@ def topic_detail(request, topic_id):
         if not text:
             return JsonResponse({'error': 'Topic text cannot be empty.'}, status=400)
         topic.text = text
-        topic.save()
+    if visibility is not None:
+        topic.is_public = visibility
+    topic.save()
 
     return JsonResponse({'topic': serialize_topic(topic)})
 
@@ -326,6 +381,7 @@ def entry_list(request, topic_id):
     entry = Entry.objects.create(
         topic=topic,
         text=text,
+        is_public=bool(parse_optional_bool(data.get('is_public'))),
         image=image_upload,
         video=None,
         document=document_upload,
@@ -366,6 +422,7 @@ def entry_detail(request, entry_id):
         return JsonResponse({'error': 'Invalid JSON payload.'}, status=400)
 
     text = data.get('text')
+    visibility = parse_optional_bool(data.get('is_public'))
     clear_fields = any(
         data.get(key) for key in ['clear_image', 'clear_video', 'clear_document']
     )
@@ -373,7 +430,7 @@ def entry_detail(request, entry_id):
     if request.method == 'PUT':
         if not (text or '').strip():
             return JsonResponse({'error': 'Entry text is required.'}, status=400)
-    elif text is None and not clear_fields:
+    elif text is None and not clear_fields and visibility is None:
         return JsonResponse({'error': 'No fields to update.'}, status=400)
 
     if text is not None and not text.strip():

@@ -18,6 +18,7 @@
                         {% csrf_token %}
 
                         {% bootstrap_field form.text %}
+                        {% bootstrap_field form.is_public %}
 
                         <details class="mb-4 mt-2">
                             <summary class="text-muted" style="cursor: pointer; user-select: none;">
