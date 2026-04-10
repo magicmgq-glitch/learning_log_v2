@@ -13,6 +13,7 @@ urlpatterns = [
     # 新增这一行：特定主题的详情页
     # <int:topic_id>会捕获URL中的数字，并作为变量传给视图
     path('topics/<int:topic_id>/', views.topic, name='topic'),
+    path('entries/<int:entry_id>/', views.entry_detail, name='entry_detail'),
     path('new_topic/', views.new_topic, name='new_topic'),
     path('new_entry/<int:topic_id>/', views.new_entry, name='new_entry'),
     path('edit_entry/<int:entry_id>/', views.edit_entry, name='edit_entry'),

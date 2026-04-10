@@ -6,10 +6,12 @@ from uuid import uuid4
 from django.core.files.storage import default_storage
 from django.db.models import Q
 from django.http import FileResponse, JsonResponse
+from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
+from users.models import UserAPIToken
 
 from .image_previews import (
     ensure_image_preview,
@@ -41,17 +43,36 @@ def api_login_required(view_func):
         if request.user.is_authenticated:
             return view_func(request, *args, **kwargs)
 
+        authorization = request.META.get('HTTP_AUTHORIZATION', '').strip()
+        raw_token = ''
+        if authorization.lower().startswith('bearer '):
+            raw_token = authorization.split(' ', 1)[1].strip()
+
         authenticator = JWTAuthentication()
         try:
             auth_result = authenticator.authenticate(request)
         except (InvalidToken, TokenError):
+            auth_result = None
+
+        if auth_result is not None:
+            request.user, request.auth = auth_result
+            return view_func(request, *args, **kwargs)
+
+        if raw_token:
+            api_token = (
+                UserAPIToken.objects.select_related('user')
+                .filter(token=raw_token, is_active=True, user__is_active=True)
+                .first()
+            )
+            if api_token is not None:
+                api_token.last_used_at = timezone.now()
+                api_token.save(update_fields=['last_used_at'])
+                request.user = api_token.user
+                request.auth = api_token
+                return view_func(request, *args, **kwargs)
             return JsonResponse({'error': 'Invalid or expired token.'}, status=401)
 
-        if auth_result is None:
-            return JsonResponse({'error': 'Authentication required.'}, status=401)
-
-        request.user, request.auth = auth_result
-        return view_func(request, *args, **kwargs)
+        return JsonResponse({'error': 'Authentication required.'}, status=401)
 
     return wrapped
 

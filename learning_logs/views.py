@@ -6,6 +6,7 @@ from django.http import Http404
 from django.shortcuts import render, redirect
 from .models import Topic, Entry
 from .forms import TopicForm, EntryForm  # 导入我们刚才写的表单
+from .entry_previews import build_entry_preview
 from .upload_limits import image_upload_max_bytes, image_upload_max_mb, is_file_too_large
 from .video_processing import attach_video_and_enqueue_transcode
 
@@ -45,6 +46,21 @@ def public_entry_detail(request, entry_id):
     context = {'entry': entry}
     return render(request, 'learning_logs/public_entry_detail.html', context)
 
+
+@login_required
+def entry_detail(request, entry_id):
+    """显示当前用户自己的单篇笔记详情。"""
+    entry = (
+        Entry.objects.filter(id=entry_id)
+        .select_related('topic', 'topic__owner')
+        .first()
+    )
+    if entry is None or entry.topic.owner != request.user:
+        raise Http404
+
+    context = {'entry': entry, 'topic': entry.topic}
+    return render(request, 'learning_logs/entry_detail.html', context)
+
 @login_required
 def topics(request):
     """显示所有的主题"""
@@ -67,9 +83,15 @@ def topic(request, topic_id):
     # 2.找出该主题关联的所有条目（这就是外键的威力：topic.entry_set）
     # ord_by('-date_added')里面的减号表示“降序”，即最新的条目排在最上面
     entries = topic.entry_set.order_by('-date_added')
+    entry_cards = []
+    for entry in entries:
+        entry_cards.append({
+            'entry': entry,
+            'preview': build_entry_preview(entry),
+        })
 
     # 3.把主题和条目打包发给HTML
-    context = {'topic': topic, 'entries': entries}
+    context = {'topic': topic, 'entries': entries, 'entry_cards': entry_cards}
     return render(request, 'learning_logs/topic.html', context)
 
 @login_required

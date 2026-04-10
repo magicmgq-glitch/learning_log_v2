@@ -33,6 +33,54 @@
         font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
         color: #374151;
     }
+    .entry-preview-link {
+        text-decoration: none;
+        color: inherit;
+        display: block;
+    }
+    .topic-public-badge {
+        font-size: 0.72rem;
+        padding: 0.22rem 0.48rem;
+        vertical-align: middle;
+    }
+    .entry-preview-card {
+        transition: transform 0.18s ease, box-shadow 0.18s ease;
+    }
+    .entry-preview-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 14px 32px rgba(15, 23, 42, 0.1) !important;
+    }
+    .entry-preview-shell {
+        --entry-preview-total-max: clamp(220px, 24vw, 340px);
+        --entry-preview-media-max: clamp(150px, 18vw, 250px);
+        --entry-preview-text-max: calc(var(--entry-preview-total-max) - 2.8rem);
+    }
+    .entry-preview-media {
+        background: #f8fafc;
+        border-radius: 14px;
+        overflow: hidden;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        height: var(--entry-preview-media-max);
+    }
+    .entry-preview-media img,
+    .entry-preview-media video {
+        max-width: 100%;
+        max-height: 100%;
+        object-fit: contain;
+    }
+    .entry-preview-text {
+        max-height: var(--entry-preview-text-max);
+        overflow: hidden;
+        line-height: 1.75;
+    }
+    .entry-preview-title {
+        display: -webkit-box;
+        -webkit-line-clamp: 1;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+    }
     </style>
     <div class="d-flex justify-content-between align-items-center mb-4 pb-2 border-bottom">
 
@@ -40,7 +88,7 @@
             <h2 class="text-primary fw-bold mb-0 text-truncate">
                 {{ topic.text }}
                 {% if topic.is_public %}
-                    <span class="badge text-bg-success align-middle ms-2">主题已公开</span>
+                    <span class="badge rounded-pill text-bg-success align-middle ms-2 topic-public-badge">已公开</span>
                 {% endif %}
             </h2>
 
@@ -93,60 +141,40 @@
     </div>
 
     <div class="mb-5">
-        {% for entry in entries %}
-            <div class="card mb-4 shadow-sm border-0">
+        {% for item in entry_cards %}
+            <a href="{% url 'learning_logs:entry_detail' item.entry.id %}" class="entry-preview-link">
+                <div class="card entry-preview-card entry-preview-shell mb-4 shadow-sm border-0">
+                    <div class="card-header bg-light d-flex justify-content-between align-items-center border-0 py-2">
+                        <span class="text-muted small">
+                            记录于：{{ item.entry.date_added|date:'Y年m月d日 H:i' }}
+                            {% if topic.is_public or item.entry.is_public %}
+                                <span class="badge text-bg-success ms-2">公开</span>
+                            {% endif %}
+                        </span>
+                        <span class="text-muted small">查看详情</span>
+                    </div>
 
-                <div class="card-header bg-light d-flex justify-content-between align-items-center border-0 py-2">
-                    <span class="text-muted small">
-                        记录于：{{ entry.date_added|date:'Y年m月d日 H:i' }}
-                        {% if topic.is_public or entry.is_public %}
-                            <span class="badge text-bg-success ms-2">公开</span>
+                    <div class="card-body px-4 py-3">
+                        <div class="fw-semibold fs-5 mb-2 entry-preview-title">{{ item.preview.title }}</div>
+
+                        {% if item.preview.has_media %}
+                            <div class="entry-preview-media mt-3">
+                                {% if item.preview.media_kind == 'image' %}
+                                    <img src="{{ item.preview.media_url }}" alt="笔记图片预览">
+                                {% elif item.preview.media_kind == 'video' %}
+                                    <video muted playsinline preload="metadata">
+                                        <source src="{{ item.preview.media_url }}" type="video/mp4">
+                                    </video>
+                                {% endif %}
+                            </div>
+                        {% else %}
+                            <div class="entry-preview-text text-muted mt-2">
+                                {{ item.preview.body }}
+                            </div>
                         {% endif %}
-                    </span>
-
-                    <div class="d-flex gap-2 align-items-center">
-                        <a href="{% url 'learning_logs:edit_entry' entry.id %}" class="btn btn-sm btn-outline-secondary">
-                            编辑
-                        </a>
-
-                        <form action="{% url 'learning_logs:delete_entry' entry.id %}" method="post" class="m-0" onsubmit="return confirm('确定要永久删除这条笔记吗？此操作无法恢复。');">
-                            {% csrf_token %}
-                            <button type="submit" class="btn btn-sm btn-outline-danger">
-                                删除
-                            </button>
-                        </form>
                     </div>
                 </div>
-
-                <div class="card-body px-4 py-3">
-                    <div class="markdown-content">
-                        {{ entry.text|markdownify }}
-                    </div>
-                    {% if entry.image %}
-                    <div class="mt-3 text-center">
-                        <img src="{{ entry.image.url }}" class="img-fluid rounded shadow-sm" style="max-height: 400px;" alt="笔记图片">
-                    </div>
-                    {% endif %}
-
-                    {% if entry.video %}
-                        <div class="mt-3 text-center">
-                            <video controls class="rounded shadow-sm" style="max-height: 400px; max-width: 100%;">
-                                <source src="{{ entry.video.url }}" type="video/mp4">
-                                您的浏览器不支持视频播放。
-                            </video>
-                        </div>
-                    {% endif %}
-
-                    {% if entry.document %}
-                        <div class="mt-3 border-top pt-3">
-                            <a href="{{ entry.document.url }}" class="btn btn-sm btn-outline-primary" download>
-                                📎 下载附件
-                            </a>
-                        </div>
-                    {% endif %}
-                </div>
-
-            </div>
+            </a>
         {% empty %}
             <div class="text-center text-muted mt-5 p-5 bg-white rounded shadow-sm">
                 <p class="mb-3">还没有为这个主题写下任何笔记，开始你的第一次记录吧。</p>

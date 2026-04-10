@@ -11,6 +11,8 @@ from django.test import Client, TestCase, override_settings
 from django.urls import reverse
 from PIL import Image
 
+from users.models import UserAPIToken
+
 from .models import Entry, Topic
 
 
@@ -394,6 +396,67 @@ class JwtAuthTests(TestCase):
         self.assertEqual(response.status_code, 401)
         self.assertEqual(response.json()['error'], 'Invalid or expired token.')
 
+    def test_current_user_returns_profile_for_long_lived_api_token(self):
+        api_token = UserAPIToken.ensure_for_user(self.user)
+        api_token.is_active = True
+        api_token.save(update_fields=['is_active'])
+
+        response = self.client.get(
+            reverse('current_user'),
+            headers={'Authorization': f'Bearer {api_token.token}'},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['user']['username'], 'alice')
+
+    def test_topic_api_accepts_long_lived_api_token(self):
+        api_token = UserAPIToken.ensure_for_user(self.user)
+        api_token.is_active = True
+        api_token.save(update_fields=['is_active'])
+
+        response = self.client.get(
+            reverse('learning_logs_api:topic_list'),
+            headers={'Authorization': f'Bearer {api_token.token}'},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(len(payload['topics']), 1)
+        self.assertEqual(payload['topics'][0]['text'], 'Python')
+
+    def test_long_lived_api_token_updates_last_used_time(self):
+        api_token = UserAPIToken.ensure_for_user(self.user)
+        api_token.is_active = True
+        api_token.save(update_fields=['is_active'])
+        self.assertIsNone(api_token.last_used_at)
+
+        response = self.client.get(
+            reverse('current_user'),
+            headers={'Authorization': f'Bearer {api_token.token}'},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        api_token.refresh_from_db()
+        self.assertIsNotNone(api_token.last_used_at)
+
+    def test_long_lived_api_token_is_disabled_by_default(self):
+        api_token = UserAPIToken.ensure_for_user(self.user)
+
+        self.assertFalse(api_token.is_active)
+
+    def test_inactive_long_lived_api_token_is_rejected(self):
+        api_token = UserAPIToken.ensure_for_user(self.user)
+        api_token.is_active = False
+        api_token.save(update_fields=['is_active'])
+
+        response = self.client.get(
+            reverse('learning_logs_api:topic_list'),
+            headers={'Authorization': f'Bearer {api_token.token}'},
+        )
+
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(response.json()['error'], 'Invalid or expired token.')
+
     def test_register_api_creates_user_and_returns_tokens(self):
         response = self.client.post(
             reverse('register_api'),
@@ -574,6 +637,38 @@ class PublicWebViewTests(TestCase):
     def test_public_entry_detail_rejects_private_entry(self):
         response = self.client.get(
             reverse('learning_logs:public_entry_detail', kwargs={'entry_id': self.private_entry.id})
+        )
+
+        self.assertEqual(response.status_code, 404)
+
+
+class OwnedEntryWebViewTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username='owner', password='secret123')
+        self.other_user = User.objects.create_user(username='other', password='secret123')
+        self.topic = Topic.objects.create(text='Python', owner=self.user)
+        self.entry = Entry.objects.create(
+            topic=self.topic,
+            text='# 标题\n\n这是一条用于预览的笔记内容，会在主题页显示卡片。',
+        )
+
+    def test_topic_page_links_to_owned_entry_detail(self):
+        self.client.login(username='owner', password='secret123')
+
+        response = self.client.get(reverse('learning_logs:topic', kwargs={'topic_id': self.topic.id}))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(
+            response,
+            reverse('learning_logs:entry_detail', kwargs={'entry_id': self.entry.id}),
+        )
+        self.assertContains(response, '查看详情')
+
+    def test_owned_entry_detail_requires_owner(self):
+        self.client.login(username='other', password='secret123')
+
+        response = self.client.get(
+            reverse('learning_logs:entry_detail', kwargs={'entry_id': self.entry.id})
         )
 
         self.assertEqual(response.status_code, 404)

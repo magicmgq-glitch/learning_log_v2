@@ -1,0 +1,97 @@
+{% extends "learning_logs/base.html" %}
+{% load markdownify %}
+
+{% block content %}
+    <style>
+    .entry-detail-shell {
+        width: 100%;
+        max-width: none;
+        margin: 0 auto;
+    }
+    .entry-detail-markdown img {
+        max-width: 100%;
+        height: auto;
+        border-radius: 10px;
+        box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+        display: block;
+        margin: 16px auto;
+    }
+    .entry-detail-markdown pre {
+        background: #f3f4f6;
+        border: 1px solid #e5e7eb;
+        border-radius: 10px;
+        padding: 12px 14px;
+        overflow-x: auto;
+    }
+    .entry-detail-markdown pre code {
+        background: transparent;
+        padding: 0;
+        border-radius: 0;
+    }
+    .entry-detail-markdown code {
+        background: #f3f4f6;
+        border: 1px solid #e5e7eb;
+        border-radius: 6px;
+        padding: 0.12rem 0.38rem;
+        color: #374151;
+    }
+    .entry-detail-markdown,
+    .entry-detail-markdown > * {
+        text-align: left;
+    }
+    </style>
+
+    <div class="entry-detail-shell">
+        <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4">
+            <div>
+                <a href="{% url 'learning_logs:topic' topic.id %}" class="btn btn-sm btn-outline-secondary mb-3">返回主题</a>
+                <h2 class="fw-bold mb-2">{{ topic.text }}</h2>
+                <div class="text-muted small">
+                    {{ entry.date_added|date:'Y年m月d日 H:i' }}
+                    {% if topic.is_public or entry.is_public %}
+                        <span class="badge text-bg-success ms-2">已公开</span>
+                    {% endif %}
+                </div>
+            </div>
+
+            <div class="d-flex gap-2">
+                <a href="{% url 'learning_logs:edit_entry' entry.id %}" class="btn btn-outline-secondary">编辑</a>
+                <form action="{% url 'learning_logs:delete_entry' entry.id %}" method="post" class="m-0" onsubmit="return confirm('确定要永久删除这条笔记吗？此操作无法恢复。');">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-outline-danger">删除</button>
+                </form>
+            </div>
+        </div>
+
+        <div class="card shadow-sm border-0">
+            <div class="card-body px-4 py-3 px-md-4 text-start">
+                <div class="entry-detail-markdown">
+                    {{ entry.text|markdownify }}
+                </div>
+
+                {% if entry.image %}
+                    <div class="mt-4 text-center">
+                        <img src="{{ entry.image.url }}" class="img-fluid rounded shadow-sm" style="max-height: 420px;" alt="笔记图片">
+                    </div>
+                {% endif %}
+
+                {% if entry.video %}
+                    <div class="mt-4 text-center">
+                        <video controls class="rounded shadow-sm" style="max-height: 420px; max-width: 100%;">
+                            <source src="{{ entry.video.url }}" type="video/mp4">
+                            您的浏览器不支持视频播放。
+                        </video>
+                    </div>
+                {% endif %}
+
+                {% if entry.document %}
+                    <div class="mt-4 pt-3 border-top">
+                        <a href="{{ entry.document.url }}" class="btn btn-sm btn-outline-primary" download>
+                            下载附件
+                        </a>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+{% endblock content %}
