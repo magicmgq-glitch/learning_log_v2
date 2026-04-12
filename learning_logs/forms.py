@@ -33,7 +33,7 @@ class EntryForm(forms.ModelForm):
         # widgets 可以让我们定制 HTML 输入框的样式，这里把文本框加宽到 80 列
         widgets = {
             'content_format': forms.Select(),
-            'text': forms.Textarea(attrs={'cols': 80, 'rows': 18}),
+            'text': forms.Textarea(attrs={'cols': 80, 'rows': 24}),
         }
 
     def clean(self):

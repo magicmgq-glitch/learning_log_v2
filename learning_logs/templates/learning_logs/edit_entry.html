@@ -5,8 +5,7 @@
     <link rel="stylesheet" href="https://unpkg.com/easymde/dist/easymde.min.css">
     <script src="https://unpkg.com/easymde/dist/easymde.min.js"></script>
 
-    <div class="row justify-content-center mt-4">
-        <div class="col-md-10 col-lg-8">
+    <div class="mt-4">
             <div class="card shadow-sm border-0">
                 <div class="card-body p-4 p-md-5">
                     <div class="mb-4">
@@ -18,9 +17,6 @@
                         {% csrf_token %}
 
                         {% bootstrap_field form.content_format %}
-                        <div id="content-format-hint" class="alert alert-light border mb-3 small text-muted">
-                            Markdown 笔记适合学习记录；HTML 页面适合项目进度表、日报、新闻简报等强排版内容。
-                        </div>
                         {% bootstrap_field form.text %}
                         {% bootstrap_field form.is_public %}
 
@@ -52,7 +48,6 @@
 
                 </div>
             </div>
-        </div>
     </div>
 
     <script>
@@ -117,7 +112,6 @@
             // 1. 精准定位
             const textArea = document.getElementById('id_text');
             const formatSelect = document.getElementById('id_content_format');
-            const formatHint = document.getElementById('content-format-hint');
             let easymde = null;
 
             // 2. 挖出真实的 CSRF 令牌
@@ -191,14 +185,8 @@
                 }
                 if (formatSelect.value === 'html') {
                     disableMarkdownEditor();
-                    textArea.setAttribute('rows', '24');
-                    if (formatHint) {
-                        formatHint.innerHTML = 'HTML 页面会按源码原样保存，并在详情页以静态网页方式展示；请粘贴 HTML 源码，不要粘贴浏览器里看到的页面文字。建议使用完整 HTML 文档或带内嵌 <code>&lt;style&gt;</code> 的内容。';
-                    }
+                    textArea.setAttribute('rows', '30');
                     return;
-                }
-                if (formatHint) {
-                    formatHint.innerHTML = 'Markdown 笔记适合学习记录；HTML 页面适合项目进度表、日报、新闻简报等强排版内容。';
                 }
                 enableMarkdownEditor();
             }
