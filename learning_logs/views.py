@@ -6,6 +6,7 @@ from django.http import Http404
 from django.shortcuts import render, redirect
 from .models import Topic, Entry
 from .forms import TopicForm, EntryForm  # 导入我们刚才写的表单
+from .entry_content import build_entry_render_payload
 from .entry_previews import build_entry_preview
 from .upload_limits import image_upload_max_bytes, image_upload_max_mb, is_file_too_large
 from .video_processing import attach_video_and_enqueue_transcode
@@ -18,7 +19,14 @@ def index(request):
         .select_related('topic', 'topic__owner')
         .order_by('-date_added')[:5]
     )
-    context = {'latest_public_entries': latest_public_entries}
+    latest_public_entry_cards = [
+        {'entry': entry, 'preview': build_entry_preview(entry)}
+        for entry in latest_public_entries
+    ]
+    context = {
+        'latest_public_entries': latest_public_entries,
+        'latest_public_entry_cards': latest_public_entry_cards,
+    }
     return render(request, 'learning_logs/index.html', context)
 
 
@@ -29,7 +37,8 @@ def public_feed(request):
         .select_related('topic', 'topic__owner')
         .order_by('-date_added')[:80]
     )
-    context = {'entries': entries}
+    entry_cards = [{'entry': entry, 'preview': build_entry_preview(entry)} for entry in entries]
+    context = {'entries': entries, 'entry_cards': entry_cards}
     return render(request, 'learning_logs/public_feed.html', context)
 
 
@@ -43,7 +52,7 @@ def public_entry_detail(request, entry_id):
     )
     if entry is None:
         raise Http404
-    context = {'entry': entry}
+    context = {'entry': entry, **build_entry_render_payload(entry)}
     return render(request, 'learning_logs/public_entry_detail.html', context)
 
 
@@ -58,7 +67,7 @@ def entry_detail(request, entry_id):
     if entry is None or entry.topic.owner != request.user:
         raise Http404
 
-    context = {'entry': entry, 'topic': entry.topic}
+    context = {'entry': entry, 'topic': entry.topic, **build_entry_render_payload(entry)}
     return render(request, 'learning_logs/entry_detail.html', context)
 
 @login_required

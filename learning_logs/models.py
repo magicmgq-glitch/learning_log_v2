@@ -18,10 +18,23 @@ class Topic(models.Model):
 
 class Entry(models.Model):
     """学到的有关某个主题的具体知识（日志条目）"""
+    CONTENT_MARKDOWN = 'markdown'
+    CONTENT_HTML = 'html'
+    CONTENT_FORMAT_CHOICES = [
+        (CONTENT_MARKDOWN, 'Markdown 笔记'),
+        (CONTENT_HTML, 'HTML 页面'),
+    ]
+
     # 核心：将条目与特定主题绑定（一对多关系）
     topic = models.ForeignKey(Topic, on_delete=models.CASCADE)
     # 使用TextField来存储大段的Markdown文本，不限制长度
     text = models.TextField()
+    content_format = models.CharField(
+        max_length=20,
+        choices=CONTENT_FORMAT_CHOICES,
+        default=CONTENT_MARKDOWN,
+        verbose_name='内容格式',
+    )
     date_added = models.DateTimeField(auto_now_add=True)
 
     # 新增三大媒体字段

@@ -1,13 +1,17 @@
 import re
 from dataclasses import dataclass
 
+from .entry_content import build_html_preview_data, entry_uses_html
+
 
 IMAGE_PATTERN = re.compile(r'!\[[^\]]*\]\(([^)\s]+)[^)]*\)')
 VIDEO_PATTERN = re.compile(r'@\[(?:video|视频)\]\(([^)\s]+)[^)]*\)')
 LINK_PATTERN = re.compile(r'\[([^\]]+)\]\(([^)]*)\)')
 INLINE_CODE_PATTERN = re.compile(r'`([^`]+)`')
 HEADING_PATTERN = re.compile(r'^\s{0,3}#{1,6}\s*')
-DECORATION_PATTERN = re.compile(r'[*_~>#-]+')
+LEADING_LIST_MARKER_PATTERN = re.compile(r'^\s*[-+*]\s+')
+LEADING_QUOTE_PATTERN = re.compile(r'^\s*>\s*')
+DECORATION_PATTERN = re.compile(r'[*_~#]+')
 WHITESPACE_PATTERN = re.compile(r'\s+')
 
 
@@ -17,6 +21,7 @@ class EntryPreview:
     body: str
     media_kind: str | None = None
     media_url: str | None = None
+    content_format: str = 'markdown'
 
     @property
     def has_media(self):
@@ -24,6 +29,16 @@ class EntryPreview:
 
 
 def build_entry_preview(entry):
+    if entry_uses_html(entry):
+        preview = build_html_preview_data(entry.text)
+        return EntryPreview(
+            title=preview['title'],
+            body=preview['body'],
+            media_kind=preview['media_kind'],
+            media_url=preview['media_url'],
+            content_format='html',
+        )
+
     text = normalize_text(entry.text)
     title = None
     collected_lines = []
@@ -72,6 +87,7 @@ def build_entry_preview(entry):
         body=body,
         media_kind=media_kind,
         media_url=media_url,
+        content_format='markdown',
     )
 
 
@@ -104,6 +120,8 @@ def preview_media_from_line(line):
 
 def preview_text_line(line):
     cleaned = HEADING_PATTERN.sub('', line)
+    cleaned = LEADING_LIST_MARKER_PATTERN.sub('', cleaned)
+    cleaned = LEADING_QUOTE_PATTERN.sub('', cleaned)
     cleaned = IMAGE_PATTERN.sub('', cleaned)
     cleaned = VIDEO_PATTERN.sub('', cleaned)
     cleaned = LINK_PATTERN.sub(r'\1', cleaned)

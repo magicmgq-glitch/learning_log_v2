@@ -19,6 +19,7 @@ from .image_previews import (
     preview_max_dimension,
     resolve_media_path,
 )
+from .entry_content import looks_like_html_source
 from .models import Entry, Topic
 from .upload_limits import (
     document_upload_max_bytes,
@@ -33,6 +34,13 @@ from .video_processing import (
     attach_video_and_enqueue_transcode,
     save_video_and_enqueue_transcode,
 )
+
+
+VALID_CONTENT_FORMATS = {
+    Entry.CONTENT_MARKDOWN,
+    Entry.CONTENT_HTML,
+}
+HTML_SOURCE_ERROR = 'HTML 内容需要提交源码，而不是网页显示后的文字。'
 
 
 def api_login_required(view_func):
@@ -102,6 +110,7 @@ def serialize_entry(request, entry, include_owner=False):
         'topic_text': entry.topic.text,
         'topic_is_public': entry.topic.is_public,
         'text': entry.text,
+        'content_format': entry.content_format,
         'date_added': entry.date_added.isoformat(),
         'is_public': entry.is_public,
         'effective_is_public': bool(entry.is_public or entry.topic.is_public),
@@ -147,10 +156,24 @@ def parse_optional_bool(value):
     return None
 
 
+def parse_optional_content_format(value):
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip().lower()
+    if normalized in VALID_CONTENT_FORMATS:
+        return normalized
+    return None
+
+
 def apply_entry_updates(entry, data):
     text = data.get('text')
     if text is not None:
-        entry.text = text.strip()
+        entry.text = text
+    content_format = parse_optional_content_format(data.get('content_format'))
+    if content_format is not None:
+        entry.content_format = content_format
     is_public = parse_optional_bool(data.get('is_public'))
     if is_public is not None:
         entry.is_public = is_public
@@ -168,6 +191,12 @@ def apply_entry_updates(entry, data):
         entry.document = None
 
     entry.save()
+
+
+def validate_entry_text_for_format(text, content_format):
+    if content_format == Entry.CONTENT_HTML and not looks_like_html_source(text):
+        return HTML_SOURCE_ERROR
+    return None
 
 
 def size_error_response(upload, max_bytes, message):
@@ -370,6 +399,14 @@ def entry_list(request, topic_id):
     text = (data.get('text') or '').strip()
     if not text:
         return JsonResponse({'error': 'Entry text is required.'}, status=400)
+    raw_text = data.get('text') or ''
+    content_format = parse_optional_content_format(data.get('content_format'))
+    if data.get('content_format') is not None and content_format is None:
+        return JsonResponse({'error': 'Content format must be markdown or html.'}, status=400)
+    content_format = content_format or Entry.CONTENT_MARKDOWN
+    html_validation_error = validate_entry_text_for_format(raw_text, content_format)
+    if html_validation_error:
+        return JsonResponse({'error': html_validation_error}, status=400)
 
     image_upload = request.FILES.get('image')
     video_upload = request.FILES.get('video')
@@ -401,7 +438,8 @@ def entry_list(request, topic_id):
 
     entry = Entry.objects.create(
         topic=topic,
-        text=text,
+        text=raw_text,
+        content_format=content_format,
         is_public=bool(parse_optional_bool(data.get('is_public'))),
         image=image_upload,
         video=None,
@@ -443,19 +481,28 @@ def entry_detail(request, entry_id):
         return JsonResponse({'error': 'Invalid JSON payload.'}, status=400)
 
     text = data.get('text')
+    content_format = parse_optional_content_format(data.get('content_format'))
     visibility = parse_optional_bool(data.get('is_public'))
     clear_fields = any(
         data.get(key) for key in ['clear_image', 'clear_video', 'clear_document']
     )
+    if data.get('content_format') is not None and content_format is None:
+        return JsonResponse({'error': 'Content format must be markdown or html.'}, status=400)
 
     if request.method == 'PUT':
         if not (text or '').strip():
             return JsonResponse({'error': 'Entry text is required.'}, status=400)
-    elif text is None and not clear_fields and visibility is None:
+    elif text is None and not clear_fields and visibility is None and content_format is None:
         return JsonResponse({'error': 'No fields to update.'}, status=400)
 
     if text is not None and not text.strip():
         return JsonResponse({'error': 'Entry text cannot be empty.'}, status=400)
+
+    target_format = content_format or entry.content_format
+    target_text = text if text is not None else entry.text
+    html_validation_error = validate_entry_text_for_format(target_text, target_format)
+    if html_validation_error:
+        return JsonResponse({'error': html_validation_error}, status=400)
 
     apply_entry_updates(entry, data)
     return JsonResponse(

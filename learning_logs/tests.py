@@ -13,6 +13,7 @@ from PIL import Image
 
 from users.models import UserAPIToken
 
+from .forms import EntryForm
 from .models import Entry, Topic
 
 
@@ -186,6 +187,44 @@ class EntryApiTests(TestCase):
             Entry.objects.filter(topic=self.topic, text='Built the first entry API.').exists()
         )
 
+    def test_create_html_entry_from_json_persists_content_format(self):
+        self.client.login(username='alice', password='secret123')
+
+        response = self.client.post(
+            reverse('learning_logs_api:entry_list', kwargs={'topic_id': self.topic.id}),
+            data=json.dumps(
+                {
+                    'text': '<!DOCTYPE html><html><body><h1>项目进度表</h1></body></html>',
+                    'content_format': 'html',
+                }
+            ),
+            content_type='application/json',
+        )
+
+        self.assertEqual(response.status_code, 201)
+        payload = response.json()
+        self.assertEqual(payload['entry']['content_format'], 'html')
+        self.assertTrue(
+            Entry.objects.filter(topic=self.topic, content_format='html').exists()
+        )
+
+    def test_create_html_entry_rejects_plain_text_page_copy(self):
+        self.client.login(username='alice', password='secret123')
+
+        response = self.client.post(
+            reverse('learning_logs_api:entry_list', kwargs={'topic_id': self.topic.id}),
+            data=json.dumps(
+                {
+                    'text': 'mypets 项目进度表 v1 这是页面展示后的文字内容',
+                    'content_format': 'html',
+                }
+            ),
+            content_type='application/json',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()['error'], 'HTML 内容需要提交源码，而不是网页显示后的文字。')
+
     @patch('learning_logs.api_views.attach_video_and_enqueue_transcode')
     def test_create_entry_with_video_uses_async_video_pipeline(self, mock_attach_video):
         with tempfile.TemporaryDirectory() as media_dir:
@@ -262,6 +301,53 @@ class EntryApiTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.entry.refresh_from_db()
         self.assertEqual(self.entry.text, 'Updated note.')
+
+    def test_update_entry_with_patch_can_switch_to_html_format(self):
+        self.client.login(username='alice', password='secret123')
+
+        response = self.client.patch(
+            reverse('learning_logs_api:entry_detail', kwargs={'entry_id': self.entry.id}),
+            data=json.dumps(
+                {
+                    'text': '<html><body><h1>HTML 笔记</h1></body></html>',
+                    'content_format': 'html',
+                }
+            ),
+            content_type='application/json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.entry.refresh_from_db()
+        self.assertEqual(self.entry.content_format, 'html')
+
+    def test_update_entry_to_html_rejects_plain_text_page_copy(self):
+        self.client.login(username='alice', password='secret123')
+
+        response = self.client.patch(
+            reverse('learning_logs_api:entry_detail', kwargs={'entry_id': self.entry.id}),
+            data=json.dumps(
+                {
+                    'text': '项目进度表 这里只是页面上的文字',
+                    'content_format': 'html',
+                }
+            ),
+            content_type='application/json',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()['error'], 'HTML 内容需要提交源码，而不是网页显示后的文字。')
+
+    def test_create_entry_rejects_invalid_content_format(self):
+        self.client.login(username='alice', password='secret123')
+
+        response = self.client.post(
+            reverse('learning_logs_api:entry_list', kwargs={'topic_id': self.topic.id}),
+            data=json.dumps({'text': 'bad', 'content_format': 'richtext'}),
+            content_type='application/json',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()['error'], 'Content format must be markdown or html.')
 
     def test_replace_entry_with_put_requires_text(self):
         self.client.login(username='alice', password='secret123')
@@ -567,6 +653,22 @@ class JwtAuthTests(TestCase):
         self.assertIn('Image file exceeds', response.json()['error'])
 
 
+class EntryFormTests(TestCase):
+    def test_html_entry_form_rejects_plain_text_page_copy(self):
+        form = EntryForm(
+            data={
+                'content_format': 'html',
+                'text': 'mypets 项目进度表 v1 这是浏览器中显示的页面文字',
+            }
+        )
+
+        self.assertFalse(form.is_valid())
+        self.assertIn(
+            'HTML 页面需要粘贴 HTML 源码，而不是浏览器里看到的页面文字。',
+            form.errors['text'],
+        )
+
+
 class PublicApiTests(TestCase):
     def setUp(self):
         self.user = User.objects.create_user(username='alice', password='secret123')
@@ -634,6 +736,27 @@ class PublicWebViewTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'Entry-only public')
 
+    def test_public_entry_detail_renders_html_note_inside_iframe(self):
+        html_entry = Entry.objects.create(
+            topic=self.entry_only_public.topic,
+            text=(
+                '<!DOCTYPE html><html lang="zh-CN"><head><style>'
+                '.hero{background:#eef5ff;padding:16px;border-radius:12px;}'
+                '</style></head><body><section class="hero"><h1>项目进度表</h1></section></body></html>'
+            ),
+            content_format='html',
+            is_public=True,
+        )
+
+        response = self.client.get(
+            reverse('learning_logs:public_entry_detail', kwargs={'entry_id': html_entry.id})
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'public-entry-html-srcdoc')
+        self.assertContains(response, 'data-srcdoc-id="public-entry-html-srcdoc"')
+        self.assertContains(response, 'js-entry-html-host')
+
     def test_public_entry_detail_rejects_private_entry(self):
         response = self.client.get(
             reverse('learning_logs:public_entry_detail', kwargs={'entry_id': self.private_entry.id})
@@ -672,6 +795,28 @@ class OwnedEntryWebViewTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 404)
+
+    def test_owned_entry_detail_renders_html_note_in_iframe(self):
+        html_entry = Entry.objects.create(
+            topic=self.topic,
+            text=(
+                '<!DOCTYPE html><html lang="zh-CN"><head><style>'
+                '.summary-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;}'
+                '</style></head><body><h1>项目进度表</h1><div class="summary-grid"><div>已完成</div><div>进行中</div></div></body></html>'
+            ),
+            content_format='html',
+        )
+        self.client.login(username='owner', password='secret123')
+
+        response = self.client.get(
+            reverse('learning_logs:entry_detail', kwargs={'entry_id': html_entry.id})
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'HTML 页面')
+        self.assertContains(response, 'entry-html-srcdoc')
+        self.assertContains(response, 'data-srcdoc-id="entry-html-srcdoc"')
+        self.assertContains(response, 'js-entry-html-host')
 
 
 class ImagePreviewApiTests(TestCase):

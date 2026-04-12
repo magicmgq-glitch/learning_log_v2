@@ -39,6 +39,21 @@
     .entry-detail-markdown > * {
         text-align: left;
     }
+    .entry-detail-html-host {
+        display: block;
+        width: 100%;
+        min-height: 720px;
+        border: 1px solid #dbe3ee;
+        border-radius: 16px;
+        background: #ffffff;
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5);
+        overflow: hidden;
+    }
+    .entry-detail-format-badge {
+        font-size: 0.72rem;
+        padding: 0.22rem 0.48rem;
+        vertical-align: middle;
+    }
     </style>
 
     <div class="entry-detail-shell">
@@ -48,6 +63,9 @@
                 <h2 class="fw-bold mb-2">{{ topic.text }}</h2>
                 <div class="text-muted small">
                     {{ entry.date_added|date:'Y年m月d日 H:i' }}
+                    {% if content_format == 'html' %}
+                        <span class="badge text-bg-primary ms-2 entry-detail-format-badge">HTML 页面</span>
+                    {% endif %}
                     {% if topic.is_public or entry.is_public %}
                         <span class="badge text-bg-success ms-2">已公开</span>
                     {% endif %}
@@ -65,9 +83,18 @@
 
         <div class="card shadow-sm border-0">
             <div class="card-body px-4 py-3 px-md-4 text-start">
-                <div class="entry-detail-markdown">
-                    {{ entry.text|markdownify }}
-                </div>
+                {% if content_format == 'html' %}
+                    {{ html_srcdoc|json_script:"entry-html-srcdoc" }}
+                    <div
+                        class="entry-detail-html-host js-entry-html-host"
+                        data-srcdoc-id="entry-html-srcdoc"
+                        data-title="{{ topic.text }} HTML 页面笔记">
+                    </div>
+                {% else %}
+                    <div class="entry-detail-markdown">
+                        {{ entry.text|markdownify }}
+                    </div>
+                {% endif %}
 
                 {% if entry.image %}
                     <div class="mt-4 text-center">
@@ -94,4 +121,54 @@
             </div>
         </div>
     </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const hosts = document.querySelectorAll('.js-entry-html-host');
+
+            function adaptHtmlNoteStyles(cssText) {
+                return cssText
+                    .replace(/:root\b/g, ':host')
+                    .replace(/html\s*,\s*body\b/g, ':host, .html-note-body')
+                    .replace(/\bhtml\b/g, ':host')
+                    .replace(/\bbody\b/g, '.html-note-body');
+            }
+
+            hosts.forEach(function(host) {
+                const srcdocId = host.dataset.srcdocId;
+                if (!srcdocId) {
+                    return;
+                }
+                const srcdocNode = document.getElementById(srcdocId);
+                if (!srcdocNode) {
+                    return;
+                }
+                try {
+                    const rawHtml = JSON.parse(srcdocNode.textContent);
+                    const parsed = new DOMParser().parseFromString(rawHtml, 'text/html');
+                    const styleText = Array.from(parsed.querySelectorAll('style'))
+                        .map(function(node) { return adaptHtmlNoteStyles(node.textContent || ''); })
+                        .join('\n');
+                    const bodyHtml = parsed.body ? parsed.body.innerHTML : rawHtml;
+                    const root = host.attachShadow ? host.attachShadow({ mode: 'open' }) : host;
+                    root.innerHTML = `
+                        <style>
+                            :host {
+                                display: block;
+                                background: #ffffff;
+                                color: #111827;
+                            }
+                            .html-note-body {
+                                min-height: 720px;
+                            }
+                            ${styleText}
+                        </style>
+                        <div class="html-note-body">${bodyHtml}</div>
+                    `;
+                } catch (error) {
+                    console.warn('HTML 页面笔记注入失败', error);
+                }
+            });
+        });
+    </script>
 {% endblock content %}

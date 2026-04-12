@@ -2,6 +2,17 @@
 {% load markdownify %}
 
 {% block content %}
+    <style>
+    .public-entry-html-host {
+        display: block;
+        width: 100%;
+        min-height: 720px;
+        border: 1px solid #dbe3ee;
+        border-radius: 16px;
+        background: #ffffff;
+        overflow: hidden;
+    }
+    </style>
     <div class="mb-3 mt-3">
         <a href="{% url 'learning_logs:public_feed' %}" class="btn btn-sm btn-outline-secondary">返回笔记广场</a>
     </div>
@@ -14,9 +25,18 @@
             <span class="small text-muted">{{ entry.date_added|date:'Y年m月d日 H:i' }}</span>
         </div>
         <div class="card-body px-4 py-3">
-            <div class="markdown-content">
-                {{ entry.text|markdownify }}
-            </div>
+            {% if content_format == 'html' %}
+                {{ html_srcdoc|json_script:"public-entry-html-srcdoc" }}
+                <div
+                    class="public-entry-html-host js-entry-html-host"
+                    data-srcdoc-id="public-entry-html-srcdoc"
+                    data-title="{{ entry.topic.text }} HTML 页面笔记">
+                </div>
+            {% else %}
+                <div class="markdown-content">
+                    {{ entry.text|markdownify }}
+                </div>
+            {% endif %}
 
             {% if entry.image %}
                 <div class="mt-3 text-center">
@@ -42,4 +62,54 @@
             {% endif %}
         </div>
     </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const hosts = document.querySelectorAll('.js-entry-html-host');
+
+            function adaptHtmlNoteStyles(cssText) {
+                return cssText
+                    .replace(/:root\b/g, ':host')
+                    .replace(/html\s*,\s*body\b/g, ':host, .html-note-body')
+                    .replace(/\bhtml\b/g, ':host')
+                    .replace(/\bbody\b/g, '.html-note-body');
+            }
+
+            hosts.forEach(function(host) {
+                const srcdocId = host.dataset.srcdocId;
+                if (!srcdocId) {
+                    return;
+                }
+                const srcdocNode = document.getElementById(srcdocId);
+                if (!srcdocNode) {
+                    return;
+                }
+                try {
+                    const rawHtml = JSON.parse(srcdocNode.textContent);
+                    const parsed = new DOMParser().parseFromString(rawHtml, 'text/html');
+                    const styleText = Array.from(parsed.querySelectorAll('style'))
+                        .map(function(node) { return adaptHtmlNoteStyles(node.textContent || ''); })
+                        .join('\n');
+                    const bodyHtml = parsed.body ? parsed.body.innerHTML : rawHtml;
+                    const root = host.attachShadow ? host.attachShadow({ mode: 'open' }) : host;
+                    root.innerHTML = `
+                        <style>
+                            :host {
+                                display: block;
+                                background: #ffffff;
+                                color: #111827;
+                            }
+                            .html-note-body {
+                                min-height: 720px;
+                            }
+                            ${styleText}
+                        </style>
+                        <div class="html-note-body">${bodyHtml}</div>
+                    `;
+                } catch (error) {
+                    console.warn('HTML 页面笔记注入失败', error);
+                }
+            });
+        });
+    </script>
 {% endblock content %}

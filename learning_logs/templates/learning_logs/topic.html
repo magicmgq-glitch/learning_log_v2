@@ -155,7 +155,12 @@
                     </div>
 
                     <div class="card-body px-4 py-3">
-                        <div class="fw-semibold fs-5 mb-2 entry-preview-title">{{ item.preview.title }}</div>
+                        <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+                            <div class="fw-semibold fs-5 entry-preview-title">{{ item.preview.title }}</div>
+                            {% if item.preview.content_format == 'html' %}
+                                <span class="badge text-bg-primary">HTML 页面</span>
+                            {% endif %}
+                        </div>
 
                         {% if item.preview.has_media %}
                             <div class="entry-preview-media mt-3">

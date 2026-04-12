@@ -27,16 +27,16 @@
     </div>
 
     <div class="list-group shadow-sm mb-5">
-        {% for entry in latest_public_entries %}
-            <a href="{% url 'learning_logs:public_entry_detail' entry.id %}" class="list-group-item list-group-item-action py-3">
+        {% for item in latest_public_entry_cards %}
+            <a href="{% url 'learning_logs:public_entry_detail' item.entry.id %}" class="list-group-item list-group-item-action py-3">
                 <div class="d-flex justify-content-between align-items-center">
                     <div class="text-truncate pe-3">
-                        <strong>{{ entry.topic.text }}</strong>
-                        <span class="text-muted ms-2">@{{ entry.topic.owner.username }}</span>
+                        <strong>{{ item.entry.topic.text }}</strong>
+                        <span class="text-muted ms-2">@{{ item.entry.topic.owner.username }}</span>
                     </div>
-                    <small class="text-muted">{{ entry.date_added|date:'m-d H:i' }}</small>
+                    <small class="text-muted">{{ item.entry.date_added|date:'m-d H:i' }}</small>
                 </div>
-                <div class="text-muted mt-1">{{ entry.text|truncatechars:80 }}</div>
+                <div class="text-muted mt-1">{{ item.preview.body|truncatechars:80 }}</div>
             </a>
         {% empty %}
             <div class="list-group-item text-muted text-center py-4">

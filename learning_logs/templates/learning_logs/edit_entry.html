@@ -17,6 +17,10 @@
                     <form action="{% url 'learning_logs:edit_entry' entry.id %}" method="post" enctype="multipart/form-data" novalidate>
                         {% csrf_token %}
 
+                        {% bootstrap_field form.content_format %}
+                        <div id="content-format-hint" class="alert alert-light border mb-3 small text-muted">
+                            Markdown 笔记适合学习记录；HTML 页面适合项目进度表、日报、新闻简报等强排版内容。
+                        </div>
                         {% bootstrap_field form.text %}
                         {% bootstrap_field form.is_public %}
 
@@ -112,14 +116,19 @@
             // 1. 精准定位：Django 默认会给文本框加上 id="id_text"
             // 1. 精准定位
             const textArea = document.getElementById('id_text');
+            const formatSelect = document.getElementById('id_content_format');
+            const formatHint = document.getElementById('content-format-hint');
+            let easymde = null;
 
             // 2. 挖出真实的 CSRF 令牌
             const csrfInput = document.querySelector('[name=csrfmiddlewaretoken]');
             const csrfToken = csrfInput ? csrfInput.value : '';
 
-            // 3. 启动编辑器并接管上传
-            if (textArea) {
-                const easymde = new EasyMDE({
+            function enableMarkdownEditor() {
+                if (!textArea || easymde) {
+                    return;
+                }
+                easymde = new EasyMDE({
                     element: textArea,
                     uploadImage: true,
                     // 图片上传大小上限：5MB（与后端保持一致）
@@ -166,12 +175,46 @@
                     },
                     toolbar: ["bold", "italic", "heading", "|", "quote", "unordered-list", "ordered-list", "|", "link", "upload-image", "preview", "side-by-side", "fullscreen", "|", "guide"]
                 });
+            }
 
-                // 【核心修改】：在表单提交前，强制把编辑器里的内容同步回那个隐藏的输入框
+            function disableMarkdownEditor() {
+                if (!easymde) {
+                    return;
+                }
+                easymde.toTextArea();
+                easymde = null;
+            }
+
+            function syncEditorMode() {
+                if (!formatSelect || !textArea) {
+                    return;
+                }
+                if (formatSelect.value === 'html') {
+                    disableMarkdownEditor();
+                    textArea.setAttribute('rows', '24');
+                    if (formatHint) {
+                        formatHint.innerHTML = 'HTML 页面会按源码原样保存，并在详情页以静态网页方式展示；请粘贴 HTML 源码，不要粘贴浏览器里看到的页面文字。建议使用完整 HTML 文档或带内嵌 <code>&lt;style&gt;</code> 的内容。';
+                    }
+                    return;
+                }
+                if (formatHint) {
+                    formatHint.innerHTML = 'Markdown 笔记适合学习记录；HTML 页面适合项目进度表、日报、新闻简报等强排版内容。';
+                }
+                enableMarkdownEditor();
+            }
+
+            // 3. 启动编辑器并接管上传
+            if (textArea) {
+                syncEditorMode();
+
+                formatSelect?.addEventListener('change', syncEditorMode);
+
                 const form = textArea.closest('form');
                 if (form) {
                     form.addEventListener('submit', function() {
+                        if (easymde) {
                         easymde.forceSync();
+                        }
                     });
                 }
 
