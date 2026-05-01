@@ -3,7 +3,7 @@
     <div class="d-flex justify-content-between align-items-center mb-4 mt-3">
         <div>
             <h2 class="fw-bold mb-1">信息流</h2>
-            <p class="text-muted mb-0">先承接低风险发布事件：晨报发布与执行结果发布。</p>
+            <p class="text-muted mb-0">系统持续筛选高价值信号、主题跟踪和最小落地结果。</p>
         </div>
         <a href="{% url 'learning_logs:public_feed' %}" class="btn btn-outline-primary">进入笔记广场</a>
     </div>
@@ -19,7 +19,7 @@
                         <div class="d-flex justify-content-between align-items-start gap-3">
                             <div class="flex-grow-1">
                                 <div class="d-flex align-items-center gap-2 flex-wrap">
-                                    <span class="badge {% if item.event_type == 'briefing_release' %}text-bg-primary{% else %}text-bg-success{% endif %}">
+                                    <span class="badge {% if item.event_type == 'theme_update' %}text-bg-primary{% elif item.event_type == 'action_result' %}text-bg-success{% else %}text-bg-info{% endif %}">
                                         {{ item.get_event_type_display }}
                                     </span>
                                     <strong>{{ item.title }}</strong>
@@ -42,7 +42,7 @@
             {% endwith %}
         {% empty %}
             <div class="list-group-item text-center text-muted py-4">
-                目前还没有公开的信息流事件。
+                目前还没有公开的高价值信号。
             </div>
         {% endfor %}
     </div>

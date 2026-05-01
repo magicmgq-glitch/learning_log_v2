@@ -164,6 +164,12 @@ private struct StreamItemCard: View {
 
     private var streamTypeLabel: String {
         switch item.eventType {
+        case "signal_item":
+            return "信号"
+        case "theme_update":
+            return "主题"
+        case "action_result":
+            return "结果"
         case "briefing_release":
             return "晨报"
         case "artifact_release":
@@ -175,6 +181,12 @@ private struct StreamItemCard: View {
 
     private var streamTypeIcon: String {
         switch item.eventType {
+        case "signal_item":
+            return "dot.radiowaves.left.and.right"
+        case "theme_update":
+            return "point.3.connected.trianglepath.dotted"
+        case "action_result":
+            return "checkmark.circle"
         case "briefing_release":
             return "sun.max"
         case "artifact_release":
@@ -186,6 +198,12 @@ private struct StreamItemCard: View {
 
     private var streamTypeColor: Color {
         switch item.eventType {
+        case "signal_item":
+            return .blue
+        case "theme_update":
+            return .purple
+        case "action_result":
+            return .green
         case "briefing_release":
             return .orange
         case "artifact_release":

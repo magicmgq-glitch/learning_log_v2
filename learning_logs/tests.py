@@ -795,6 +795,29 @@ class StreamApiTests(TestCase):
         stream_item = StreamItem.objects.get(event_id='evt-briefing-2026-05-01')
         self.assertEqual(stream_item.summary, '晨报摘要已刷新。')
 
+    def test_stream_create_accepts_signal_item(self):
+        self.client.login(username='alice', password='secret123')
+
+        response = self.client.post(
+            reverse('learning_logs_api:stream_list'),
+            data=json.dumps(
+                self.build_stream_request(
+                    payload={
+                        'item_id': 'signal-2026-05-01-1',
+                        'item_type': 'signal_item',
+                        'display_title': '高价值信号',
+                        'display_summary': '这是一条适合进入公开信息流的信号。',
+                        'related_entry_id': None,
+                    }
+                )
+            ),
+            content_type='application/json',
+        )
+
+        self.assertEqual(response.status_code, 201)
+        payload = response.json()['stream_item']
+        self.assertEqual(payload['event_type'], StreamItem.EVENT_SIGNAL_ITEM)
+
     def test_stream_create_rejects_unsupported_event_type(self):
         self.client.login(username='alice', password='secret123')
 
@@ -803,8 +826,8 @@ class StreamApiTests(TestCase):
             data=json.dumps(
                 self.build_stream_request(
                     payload={
-                        'item_id': 'evt-theme-update-1',
-                        'item_type': 'theme_update',
+                        'item_id': 'evt-unknown-1',
+                        'item_type': 'unknown_item',
                     }
                 )
             ),
@@ -812,9 +835,9 @@ class StreamApiTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 400)
-        self.assertIn('Only briefing_release and artifact_release are supported', response.json()['error'])
+        self.assertIn('item_type must be one of', response.json()['error'])
 
-    def test_public_stream_list_returns_only_public_items(self):
+    def test_public_stream_list_defaults_to_high_value_feed_items(self):
         StreamItem.objects.create(
             event_id='evt-public-1',
             event_type=StreamItem.EVENT_BRIEFING_RELEASE,
@@ -826,14 +849,13 @@ class StreamApiTests(TestCase):
             source_object_ids=['briefing:public'],
         )
         StreamItem.objects.create(
-            event_id='evt-private-1',
-            event_type=StreamItem.EVENT_ARTIFACT_RELEASE,
-            title='私有结果',
-            summary='内部使用',
+            event_id='signal-public-1',
+            event_type=StreamItem.EVENT_SIGNAL_ITEM,
+            title='公开信号',
+            summary='对外可见',
             occurred_at=timezone.now(),
-            visibility=StreamItem.VISIBILITY_PRIVATE,
-            related_entry=self.private_entry,
-            source_object_ids=['artifact:private'],
+            visibility=StreamItem.VISIBILITY_PUBLIC,
+            source_object_ids=['signal:public'],
         )
 
         response = self.client.get(reverse('learning_logs_api:public_stream_list'))
@@ -841,8 +863,94 @@ class StreamApiTests(TestCase):
         self.assertEqual(response.status_code, 200)
         payload = response.json()
         titles = {item['display_title'] for item in payload['stream_items']}
+        self.assertIn('公开信号', titles)
+        self.assertNotIn('公开晨报', titles)
+
+    def test_public_stream_list_can_filter_release_events_explicitly(self):
+        StreamItem.objects.create(
+            event_id='evt-public-1',
+            event_type=StreamItem.EVENT_BRIEFING_RELEASE,
+            title='公开晨报',
+            summary='对外可见',
+            occurred_at=timezone.now(),
+            visibility=StreamItem.VISIBILITY_PUBLIC,
+            related_entry=self.public_entry,
+            source_object_ids=['briefing:public'],
+        )
+
+        response = self.client.get(
+            reverse('learning_logs_api:public_stream_list'),
+            {'event_type': StreamItem.EVENT_BRIEFING_RELEASE},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        titles = {item['display_title'] for item in response.json()['stream_items']}
         self.assertIn('公开晨报', titles)
-        self.assertNotIn('私有结果', titles)
+
+    def test_public_stream_list_enforces_limit_and_before_id_cursor(self):
+        older = StreamItem.objects.create(
+            event_id='signal-old',
+            event_type=StreamItem.EVENT_SIGNAL_ITEM,
+            title='旧信号',
+            summary='第二页',
+            occurred_at=timezone.now() - timezone.timedelta(minutes=2),
+            visibility=StreamItem.VISIBILITY_PUBLIC,
+            source_object_ids=['signal:old'],
+        )
+        newer = StreamItem.objects.create(
+            event_id='signal-new',
+            event_type=StreamItem.EVENT_SIGNAL_ITEM,
+            title='新信号',
+            summary='第一页',
+            occurred_at=timezone.now(),
+            visibility=StreamItem.VISIBILITY_PUBLIC,
+            source_object_ids=['signal:new'],
+        )
+
+        first_page = self.client.get(reverse('learning_logs_api:public_stream_list'), {'limit': '1'})
+
+        self.assertEqual(first_page.status_code, 200)
+        first_payload = first_page.json()
+        self.assertEqual(len(first_payload['stream_items']), 1)
+        self.assertEqual(first_payload['stream_items'][0]['display_title'], '新信号')
+        self.assertTrue(first_payload['pagination']['has_more'])
+        self.assertEqual(first_payload['pagination']['next_before_id'], newer.id)
+
+        second_page = self.client.get(
+            reverse('learning_logs_api:public_stream_list'),
+            {'limit': '1', 'before_id': str(newer.id)},
+        )
+
+        self.assertEqual(second_page.status_code, 200)
+        second_payload = second_page.json()
+        self.assertEqual(len(second_payload['stream_items']), 1)
+        self.assertEqual(second_payload['stream_items'][0]['display_title'], '旧信号')
+        self.assertEqual(second_payload['stream_items'][0]['id'], older.id)
+
+    def test_public_stream_list_caps_limit_at_100(self):
+        now = timezone.now()
+        StreamItem.objects.bulk_create(
+            [
+                StreamItem(
+                    event_id=f'signal-bulk-{index}',
+                    event_type=StreamItem.EVENT_SIGNAL_ITEM,
+                    title=f'批量信号 {index}',
+                    summary='用于验证信息流最大返回数量。',
+                    occurred_at=now - timezone.timedelta(seconds=index),
+                    visibility=StreamItem.VISIBILITY_PUBLIC,
+                    source_object_ids=[f'signal:bulk:{index}'],
+                )
+                for index in range(101)
+            ]
+        )
+
+        response = self.client.get(reverse('learning_logs_api:public_stream_list'), {'limit': '500'})
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(len(payload['stream_items']), 100)
+        self.assertEqual(payload['pagination']['limit'], 100)
+        self.assertTrue(payload['pagination']['has_more'])
 
 
 class PublicWebViewTests(TestCase):
@@ -876,14 +984,24 @@ class PublicWebViewTests(TestCase):
             source_object_ids=['briefing:stream'],
         )
         StreamItem.objects.create(
-            event_id='evt-private-stream-1',
-            event_type=StreamItem.EVENT_ARTIFACT_RELEASE,
-            title='私有执行结果',
-            summary='这条不应该出现在公开信息流里。',
+            event_id='signal-public-stream-1',
+            event_type=StreamItem.EVENT_SIGNAL_ITEM,
+            title='公开高价值信号',
+            summary='这条应该出现在公开信息流里。',
+            occurred_at=timezone.now(),
+            visibility=StreamItem.VISIBILITY_PUBLIC,
+            related_entry=self.entry_only_public,
+            source_object_ids=['signal:stream'],
+        )
+        StreamItem.objects.create(
+            event_id='signal-private-stream-1',
+            event_type=StreamItem.EVENT_SIGNAL_ITEM,
+            title='私有高价值信号',
+            summary='私有信号不应该出现在公开信息流里。',
             occurred_at=timezone.now(),
             visibility=StreamItem.VISIBILITY_PRIVATE,
             related_entry=self.private_entry,
-            source_object_ids=['artifact:private'],
+            source_object_ids=['signal:private'],
         )
 
         response = self.client.get(reverse('learning_logs:public_stream'))
@@ -891,8 +1009,9 @@ class PublicWebViewTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, '信息流')
         self.assertContains(response, '系统发布')
-        self.assertContains(response, '公开晨报发布')
-        self.assertNotContains(response, '私有执行结果')
+        self.assertContains(response, '公开高价值信号')
+        self.assertNotContains(response, '公开晨报发布')
+        self.assertNotContains(response, '私有高价值信号')
         self.assertContains(
             response,
             reverse('learning_logs:public_entry_detail', kwargs={'entry_id': self.entry_only_public.id}),

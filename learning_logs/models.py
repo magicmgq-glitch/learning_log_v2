@@ -55,13 +55,24 @@ class Entry(models.Model):
 
 
 class StreamItem(models.Model):
-    """信息流条目，用于承接高频发布事件。"""
+    """信息流条目，用于承接系统筛选后的高价值信号。"""
 
     EVENT_BRIEFING_RELEASE = 'briefing_release'
     EVENT_ARTIFACT_RELEASE = 'artifact_release'
+    EVENT_SIGNAL_ITEM = 'signal_item'
+    EVENT_THEME_UPDATE = 'theme_update'
+    EVENT_ACTION_RESULT = 'action_result'
     EVENT_TYPE_CHOICES = [
         (EVENT_BRIEFING_RELEASE, '晨报发布'),
         (EVENT_ARTIFACT_RELEASE, '执行结果发布'),
+        (EVENT_SIGNAL_ITEM, '高价值信号'),
+        (EVENT_THEME_UPDATE, '主题跟踪'),
+        (EVENT_ACTION_RESULT, '最小落地结果'),
+    ]
+    PUBLIC_FEED_EVENT_TYPES = [
+        EVENT_SIGNAL_ITEM,
+        EVENT_THEME_UPDATE,
+        EVENT_ACTION_RESULT,
     ]
 
     VISIBILITY_PUBLIC = 'public'
@@ -105,6 +116,9 @@ class StreamItem(models.Model):
 
     class Meta:
         ordering = ['-occurred_at', '-id']
+        indexes = [
+            models.Index(fields=['visibility', 'event_type', 'occurred_at', 'id'], name='stream_public_feed_idx'),
+        ]
         verbose_name = '信息流条目'
         verbose_name_plural = '信息流条目'
 

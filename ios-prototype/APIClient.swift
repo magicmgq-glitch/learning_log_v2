@@ -208,7 +208,7 @@ final class APIClient {
 
     func publicStream() async throws -> StreamListResponse {
         try await send(
-            path: "/api/v1/public/stream/",
+            path: "/api/v1/public/stream/?limit=50",
             method: "GET",
             body: Optional<String>.none,
             accessToken: nil,

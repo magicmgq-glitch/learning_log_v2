@@ -41,6 +41,8 @@ VALID_CONTENT_FORMATS = {
     Entry.CONTENT_MARKDOWN,
     Entry.CONTENT_HTML,
 }
+STREAM_DEFAULT_LIMIT = 50
+STREAM_MAX_LIMIT = 100
 HTML_SOURCE_ERROR = 'HTML 内容需要提交源码，而不是网页显示后的文字。'
 
 
@@ -281,6 +283,48 @@ def build_stream_item_defaults(data, payload, owner, related_entry):
     }
 
 
+def parse_stream_limit(value):
+    try:
+        limit = int(value or STREAM_DEFAULT_LIMIT)
+    except (TypeError, ValueError):
+        return STREAM_DEFAULT_LIMIT
+    if limit < 1:
+        return STREAM_DEFAULT_LIMIT
+    return min(limit, STREAM_MAX_LIMIT)
+
+
+def apply_stream_cursor(queryset, before_id):
+    try:
+        cursor_id = int(before_id)
+    except (TypeError, ValueError):
+        return queryset
+
+    cursor_item = StreamItem.objects.filter(id=cursor_id).only('id', 'occurred_at').first()
+    if cursor_item is None:
+        return queryset
+    return queryset.filter(
+        Q(occurred_at__lt=cursor_item.occurred_at)
+        | Q(occurred_at=cursor_item.occurred_at, id__lt=cursor_item.id)
+    )
+
+
+def serialize_stream_page(request, stream_items, limit, include_owner=False, public_only=False):
+    items = list(stream_items[: limit + 1])
+    has_more = len(items) > limit
+    visible_items = items[:limit]
+    return {
+        'stream_items': [
+            serialize_stream_item(request, item, include_owner=include_owner, public_only=public_only)
+            for item in visible_items
+        ],
+        'pagination': {
+            'limit': limit,
+            'has_more': has_more,
+            'next_before_id': visible_items[-1].id if has_more and visible_items else None,
+        },
+    }
+
+
 @csrf_exempt
 @api_login_required
 @require_http_methods(['POST'])
@@ -385,20 +429,17 @@ def public_entry_list(request):
 @require_http_methods(['GET'])
 def public_stream_list(request):
     event_type = (request.GET.get('event_type') or '').strip().lower()
+    limit = parse_stream_limit(request.GET.get('limit'))
     stream_items = StreamItem.objects.filter(visibility=StreamItem.VISIBILITY_PUBLIC).select_related(
         'owner', 'related_entry', 'related_entry__topic', 'related_entry__topic__owner'
     )
     if event_type:
         stream_items = stream_items.filter(event_type=event_type)
+    else:
+        stream_items = stream_items.filter(event_type__in=StreamItem.PUBLIC_FEED_EVENT_TYPES)
+    stream_items = apply_stream_cursor(stream_items, request.GET.get('before_id'))
     stream_items = stream_items.order_by('-occurred_at', '-id')
-    return JsonResponse(
-        {
-            'stream_items': [
-                serialize_stream_item(request, item, include_owner=True, public_only=True)
-                for item in stream_items
-            ]
-        }
-    )
+    return JsonResponse(serialize_stream_page(request, stream_items, limit, include_owner=True, public_only=True))
 
 
 @csrf_exempt
@@ -407,20 +448,15 @@ def public_stream_list(request):
 def stream_list(request):
     if request.method == 'GET':
         event_type = (request.GET.get('event_type') or '').strip().lower()
+        limit = parse_stream_limit(request.GET.get('limit'))
         stream_items = StreamItem.objects.all().select_related(
             'owner', 'related_entry', 'related_entry__topic', 'related_entry__topic__owner'
         )
         if event_type:
             stream_items = stream_items.filter(event_type=event_type)
+        stream_items = apply_stream_cursor(stream_items, request.GET.get('before_id'))
         stream_items = stream_items.order_by('-occurred_at', '-id')
-        return JsonResponse(
-            {
-                'stream_items': [
-                    serialize_stream_item(request, item, public_only=False)
-                    for item in stream_items
-                ]
-            }
-        )
+        return JsonResponse(serialize_stream_page(request, stream_items, limit, public_only=False))
 
     data = get_request_data(request)
     if data is None:
@@ -445,8 +481,19 @@ def stream_list(request):
     if event_type not in {
         StreamItem.EVENT_BRIEFING_RELEASE,
         StreamItem.EVENT_ARTIFACT_RELEASE,
+        StreamItem.EVENT_SIGNAL_ITEM,
+        StreamItem.EVENT_THEME_UPDATE,
+        StreamItem.EVENT_ACTION_RESULT,
     }:
-        return JsonResponse({'error': 'Only briefing_release and artifact_release are supported for now.'}, status=400)
+        return JsonResponse(
+            {
+                'error': (
+                    'item_type must be one of briefing_release, artifact_release, '
+                    'signal_item, theme_update, or action_result.'
+                )
+            },
+            status=400,
+        )
     if not title:
         return JsonResponse({'error': 'payload.display_title is required.'}, status=400)
     if not summary:

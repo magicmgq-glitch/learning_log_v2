@@ -43,11 +43,12 @@ def public_feed(request):
 
 
 def public_stream(request):
-    """公开信息流：用于展示晨报发布和执行结果发布事件。"""
+    """公开信息流：展示系统筛选后的高价值信号。"""
     stream_items = (
         StreamItem.objects.filter(visibility=StreamItem.VISIBILITY_PUBLIC)
+        .filter(event_type__in=StreamItem.PUBLIC_FEED_EVENT_TYPES)
         .select_related('related_entry', 'related_entry__topic', 'related_entry__topic__owner')
-        .order_by('-occurred_at', '-id')[:80]
+        .order_by('-occurred_at', '-id')[:50]
     )
     context = {'stream_items': stream_items}
     return render(request, 'learning_logs/public_stream.html', context)

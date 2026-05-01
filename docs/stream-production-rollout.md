@@ -23,6 +23,7 @@ Conclusion: the production service can still publish normal notes, but it has no
 - `learning_logs/models.py`
 - `learning_logs/migrations/0005_streamitem.py`
 - `learning_logs/migrations/0006_system_stream_items.py`
+- `learning_logs/migrations/0007_alter_streamitem_event_type_and_more.py`
 - `learning_logs/api_views.py`
 - `learning_logs/api_urls.py`
 - `learning_logs/views.py`
@@ -63,7 +64,8 @@ Expected behavior:
 
 - `/api/v1/public/stream/` returns JSON.
 - `/public/stream/` returns an HTML page.
-- `artifact_release` events should show on the public page when their stream visibility is public.
+- `signal_item`, `theme_update`, and `action_result` events show in the default public stream when their visibility is public.
+- `briefing_release` and `artifact_release` events are hidden from the default public stream and are only visible through explicit `event_type` queries.
 - A public stream event may still point to a private archive note; in that case the public page should show the event summary without exposing private note content.
 
 ## Re-run stream write
