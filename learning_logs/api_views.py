@@ -6,6 +6,7 @@ from uuid import uuid4
 from django.core.files.storage import default_storage
 from django.db.models import Q
 from django.http import FileResponse, JsonResponse
+from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
@@ -20,7 +21,7 @@ from .image_previews import (
     resolve_media_path,
 )
 from .entry_content import looks_like_html_source
-from .models import Entry, Topic
+from .models import Entry, StreamItem, Topic
 from .upload_limits import (
     document_upload_max_bytes,
     document_upload_max_mb,
@@ -123,6 +124,52 @@ def serialize_entry(request, entry, include_owner=False):
     return data
 
 
+def build_stream_archive_url(request, item, public_only=False):
+    entry = item.related_entry
+    if not entry:
+        return None
+
+    entry_is_public = bool(entry.is_public or entry.topic.is_public)
+    if public_only:
+        if not entry_is_public:
+            return None
+        return request.build_absolute_uri(
+            reverse('learning_logs:public_entry_detail', kwargs={'entry_id': entry.id})
+        )
+
+    if request.user.is_authenticated and entry.topic.owner_id == request.user.id:
+        return request.build_absolute_uri(
+            reverse('learning_logs:entry_detail', kwargs={'entry_id': entry.id})
+        )
+    if entry_is_public:
+        return request.build_absolute_uri(
+            reverse('learning_logs:public_entry_detail', kwargs={'entry_id': entry.id})
+        )
+    return None
+
+
+def serialize_stream_item(request, item, include_owner=False, public_only=False):
+    data = {
+        'id': item.id,
+        'event_id': item.event_id,
+        'event_type': item.event_type,
+        'display_title': item.title,
+        'display_summary': item.summary,
+        'occurred_at': item.occurred_at.isoformat(),
+        'visibility': item.visibility,
+        'source_object_ids': item.source_object_ids,
+        'source_links': item.payload.get('source_links', []),
+        'related_entry_id': item.related_entry_id,
+        'archive_url': build_stream_archive_url(request, item, public_only=public_only),
+        'created_at': item.created_at.isoformat(),
+        'updated_at': item.updated_at.isoformat(),
+    }
+    if include_owner:
+        data['owner_username'] = item.owner.username if item.owner_id and item.owner else None
+        data['actor_type'] = 'user' if item.owner_id else 'system'
+    return data
+
+
 def get_request_data(request):
     if request.content_type and request.content_type.startswith('application/json'):
         try:
@@ -199,10 +246,39 @@ def validate_entry_text_for_format(text, content_format):
     return None
 
 
+def parse_iso_datetime_or_none(value):
+    if not value or not isinstance(value, str):
+        return None
+    try:
+        parsed = timezone.datetime.fromisoformat(value.replace('Z', '+00:00'))
+    except ValueError:
+        return None
+    if timezone.is_naive(parsed):
+        return timezone.make_aware(parsed, timezone.get_current_timezone())
+    return parsed
+
+
 def size_error_response(upload, max_bytes, message):
     if is_file_too_large(upload, max_bytes):
         return JsonResponse({'error': message}, status=400)
     return None
+
+
+def build_stream_item_defaults(data, payload, owner, related_entry):
+    occurred_at = parse_iso_datetime_or_none(payload.get('occurred_at')) or timezone.now()
+    visibility = (data.get('visibility') or StreamItem.VISIBILITY_PUBLIC).strip().lower()
+    owner_value = owner if (data.get('owner_mode') or '').strip().lower() == 'user' else None
+    return {
+        'event_type': payload.get('item_type'),
+        'title': payload.get('display_title'),
+        'summary': payload.get('display_summary'),
+        'occurred_at': occurred_at,
+        'visibility': visibility,
+        'owner': owner_value,
+        'related_entry': related_entry,
+        'source_object_ids': data.get('source_object_ids') or [],
+        'payload': payload,
+    }
 
 
 @csrf_exempt
@@ -304,6 +380,120 @@ def public_entry_list(request):
         .order_by('-date_added')
     )
     return JsonResponse({'entries': [serialize_entry(request, entry, include_owner=True) for entry in entries]})
+
+
+@require_http_methods(['GET'])
+def public_stream_list(request):
+    event_type = (request.GET.get('event_type') or '').strip().lower()
+    stream_items = StreamItem.objects.filter(visibility=StreamItem.VISIBILITY_PUBLIC).select_related(
+        'owner', 'related_entry', 'related_entry__topic', 'related_entry__topic__owner'
+    )
+    if event_type:
+        stream_items = stream_items.filter(event_type=event_type)
+    stream_items = stream_items.order_by('-occurred_at', '-id')
+    return JsonResponse(
+        {
+            'stream_items': [
+                serialize_stream_item(request, item, include_owner=True, public_only=True)
+                for item in stream_items
+            ]
+        }
+    )
+
+
+@csrf_exempt
+@api_login_required
+@require_http_methods(['GET', 'POST'])
+def stream_list(request):
+    if request.method == 'GET':
+        event_type = (request.GET.get('event_type') or '').strip().lower()
+        stream_items = StreamItem.objects.all().select_related(
+            'owner', 'related_entry', 'related_entry__topic', 'related_entry__topic__owner'
+        )
+        if event_type:
+            stream_items = stream_items.filter(event_type=event_type)
+        stream_items = stream_items.order_by('-occurred_at', '-id')
+        return JsonResponse(
+            {
+                'stream_items': [
+                    serialize_stream_item(request, item, public_only=False)
+                    for item in stream_items
+                ]
+            }
+        )
+
+    data = get_request_data(request)
+    if data is None:
+        return JsonResponse({'error': 'Invalid JSON payload.'}, status=400)
+
+    output_kind = (data.get('output_kind') or '').strip().lower()
+    if output_kind != 'waterfall_item':
+        return JsonResponse({'error': 'output_kind must be waterfall_item.'}, status=400)
+
+    payload = data.get('payload')
+    if not isinstance(payload, dict):
+        return JsonResponse({'error': 'payload must be an object.'}, status=400)
+
+    event_id = (payload.get('item_id') or '').strip()
+    event_type = (payload.get('item_type') or '').strip().lower()
+    title = (payload.get('display_title') or '').strip()
+    summary = (payload.get('display_summary') or '').strip()
+    visibility = (data.get('visibility') or '').strip().lower()
+
+    if not event_id:
+        return JsonResponse({'error': 'payload.item_id is required.'}, status=400)
+    if event_type not in {
+        StreamItem.EVENT_BRIEFING_RELEASE,
+        StreamItem.EVENT_ARTIFACT_RELEASE,
+    }:
+        return JsonResponse({'error': 'Only briefing_release and artifact_release are supported for now.'}, status=400)
+    if not title:
+        return JsonResponse({'error': 'payload.display_title is required.'}, status=400)
+    if not summary:
+        return JsonResponse({'error': 'payload.display_summary is required.'}, status=400)
+    if visibility not in {
+        StreamItem.VISIBILITY_PUBLIC,
+        StreamItem.VISIBILITY_PRIVATE,
+        StreamItem.VISIBILITY_MIXED,
+    }:
+        return JsonResponse({'error': 'visibility must be public, private, or mixed.'}, status=400)
+
+    source_object_ids = data.get('source_object_ids')
+    if not isinstance(source_object_ids, list) or not source_object_ids:
+        return JsonResponse({'error': 'source_object_ids must be a non-empty array.'}, status=400)
+
+    related_entry = None
+    related_entry_id = payload.get('related_entry_id')
+    if related_entry_id is not None:
+        related_entry = (
+            Entry.objects.filter(id=related_entry_id)
+            .select_related('topic', 'topic__owner')
+            .first()
+        )
+        if related_entry is None:
+            return JsonResponse({'error': 'related_entry_id points to a missing entry.'}, status=400)
+        if related_entry.topic.owner_id != request.user.id:
+            return JsonResponse({'error': 'related_entry_id must belong to the current user.'}, status=400)
+
+    defaults = build_stream_item_defaults(data, payload, request.user, related_entry)
+    stream_item, created = StreamItem.objects.get_or_create(event_id=event_id, defaults=defaults)
+
+    if not created:
+        stream_item.event_type = defaults['event_type']
+        stream_item.title = defaults['title']
+        stream_item.summary = defaults['summary']
+        stream_item.occurred_at = defaults['occurred_at']
+        stream_item.visibility = defaults['visibility']
+        stream_item.owner = defaults['owner']
+        stream_item.related_entry = defaults['related_entry']
+        stream_item.source_object_ids = defaults['source_object_ids']
+        stream_item.payload = defaults['payload']
+        stream_item.save()
+
+    return JsonResponse(
+        {'stream_item': serialize_stream_item(request, stream_item, public_only=False)},
+        status=201 if created else 200,
+    )
 
 
 @csrf_exempt

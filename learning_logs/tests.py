@@ -9,12 +9,13 @@ from django.contrib.auth.models import User
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import Client, TestCase, override_settings
 from django.urls import reverse
+from django.utils import timezone
 from PIL import Image
 
 from users.models import UserAPIToken
 
 from .forms import EntryForm
-from .models import Entry, Topic
+from .models import Entry, StreamItem, Topic
 
 
 class TopicApiTests(TestCase):
@@ -699,6 +700,151 @@ class PublicApiTests(TestCase):
         self.assertNotIn('Private entry', texts)
 
 
+class StreamApiTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username='alice', password='secret123')
+        self.other_user = User.objects.create_user(username='bob', password='secret123')
+        self.topic = Topic.objects.create(text='AI大师之路', owner=self.user, is_public=True)
+        self.public_entry = Entry.objects.create(
+            topic=self.topic,
+            text='公开晨报详情',
+            is_public=True,
+        )
+        self.private_entry = Entry.objects.create(
+            topic=self.topic,
+            text='私有执行结果详情',
+            is_public=False,
+        )
+
+    def build_stream_request(self, **payload_overrides):
+        payload = {
+            'request_id': 'req-briefing-1',
+            'output_kind': 'waterfall_item',
+            'source_object_ids': ['briefing:2026-05-01'],
+            'generated_at': timezone.now().isoformat(),
+            'visibility': 'public',
+            'delivery_targets': ['learning_log_stream'],
+            'payload': {
+                'item_id': 'evt-briefing-2026-05-01',
+                'item_type': 'briefing_release',
+                'display_title': 'AI 晨报已发布',
+                'display_summary': '今天的晨报已经生成，并已同步到公开笔记。',
+                'occurred_at': timezone.now().isoformat(),
+                'source_links': [{'label': '晨报详情', 'url': 'https://example.com/briefing'}],
+                'related_entry_id': self.public_entry.id,
+            },
+        }
+        payload.update({k: v for k, v in payload_overrides.items() if k != 'payload'})
+        if 'payload' in payload_overrides:
+            payload['payload'].update(payload_overrides['payload'])
+        return payload
+
+    def test_stream_create_requires_login(self):
+        response = self.client.post(
+            reverse('learning_logs_api:stream_list'),
+            data=json.dumps(self.build_stream_request()),
+            content_type='application/json',
+        )
+
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(response.json()['error'], 'Authentication required.')
+
+    def test_stream_create_persists_briefing_release(self):
+        self.client.login(username='alice', password='secret123')
+
+        response = self.client.post(
+            reverse('learning_logs_api:stream_list'),
+            data=json.dumps(self.build_stream_request()),
+            content_type='application/json',
+        )
+
+        self.assertEqual(response.status_code, 201)
+        payload = response.json()['stream_item']
+        self.assertEqual(payload['event_type'], StreamItem.EVENT_BRIEFING_RELEASE)
+        self.assertEqual(payload['related_entry_id'], self.public_entry.id)
+        self.assertTrue(
+            StreamItem.objects.filter(
+                event_id='evt-briefing-2026-05-01',
+                owner__isnull=True,
+                related_entry=self.public_entry,
+            ).exists()
+        )
+
+    def test_stream_create_upserts_existing_event(self):
+        self.client.login(username='alice', password='secret123')
+        self.client.post(
+            reverse('learning_logs_api:stream_list'),
+            data=json.dumps(self.build_stream_request()),
+            content_type='application/json',
+        )
+
+        response = self.client.post(
+            reverse('learning_logs_api:stream_list'),
+            data=json.dumps(
+                self.build_stream_request(
+                    payload={
+                        'display_summary': '晨报摘要已刷新。',
+                    }
+                )
+            ),
+            content_type='application/json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(StreamItem.objects.filter(event_id='evt-briefing-2026-05-01').count(), 1)
+        stream_item = StreamItem.objects.get(event_id='evt-briefing-2026-05-01')
+        self.assertEqual(stream_item.summary, '晨报摘要已刷新。')
+
+    def test_stream_create_rejects_unsupported_event_type(self):
+        self.client.login(username='alice', password='secret123')
+
+        response = self.client.post(
+            reverse('learning_logs_api:stream_list'),
+            data=json.dumps(
+                self.build_stream_request(
+                    payload={
+                        'item_id': 'evt-theme-update-1',
+                        'item_type': 'theme_update',
+                    }
+                )
+            ),
+            content_type='application/json',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('Only briefing_release and artifact_release are supported', response.json()['error'])
+
+    def test_public_stream_list_returns_only_public_items(self):
+        StreamItem.objects.create(
+            event_id='evt-public-1',
+            event_type=StreamItem.EVENT_BRIEFING_RELEASE,
+            title='公开晨报',
+            summary='对外可见',
+            occurred_at=timezone.now(),
+            visibility=StreamItem.VISIBILITY_PUBLIC,
+            related_entry=self.public_entry,
+            source_object_ids=['briefing:public'],
+        )
+        StreamItem.objects.create(
+            event_id='evt-private-1',
+            event_type=StreamItem.EVENT_ARTIFACT_RELEASE,
+            title='私有结果',
+            summary='内部使用',
+            occurred_at=timezone.now(),
+            visibility=StreamItem.VISIBILITY_PRIVATE,
+            related_entry=self.private_entry,
+            source_object_ids=['artifact:private'],
+        )
+
+        response = self.client.get(reverse('learning_logs_api:public_stream_list'))
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        titles = {item['display_title'] for item in payload['stream_items']}
+        self.assertIn('公开晨报', titles)
+        self.assertNotIn('私有结果', titles)
+
+
 class PublicWebViewTests(TestCase):
     def setUp(self):
         self.user = User.objects.create_user(username='alice', password='secret123')
@@ -717,6 +863,40 @@ class PublicWebViewTests(TestCase):
         self.assertContains(response, 'Entry-only public')
         self.assertContains(response, 'Topic public entry')
         self.assertNotContains(response, 'Private entry')
+
+    def test_public_stream_page_allows_anonymous_access(self):
+        StreamItem.objects.create(
+            event_id='evt-public-stream-1',
+            event_type=StreamItem.EVENT_BRIEFING_RELEASE,
+            title='公开晨报发布',
+            summary='这是一个可公开浏览的信息流事件。',
+            occurred_at=timezone.now(),
+            visibility=StreamItem.VISIBILITY_PUBLIC,
+            related_entry=self.entry_only_public,
+            source_object_ids=['briefing:stream'],
+        )
+        StreamItem.objects.create(
+            event_id='evt-private-stream-1',
+            event_type=StreamItem.EVENT_ARTIFACT_RELEASE,
+            title='私有执行结果',
+            summary='这条不应该出现在公开信息流里。',
+            occurred_at=timezone.now(),
+            visibility=StreamItem.VISIBILITY_PRIVATE,
+            related_entry=self.private_entry,
+            source_object_ids=['artifact:private'],
+        )
+
+        response = self.client.get(reverse('learning_logs:public_stream'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, '信息流')
+        self.assertContains(response, '系统发布')
+        self.assertContains(response, '公开晨报发布')
+        self.assertNotContains(response, '私有执行结果')
+        self.assertContains(
+            response,
+            reverse('learning_logs:public_entry_detail', kwargs={'entry_id': self.entry_only_public.id}),
+        )
 
     def test_index_page_shows_latest_public_entries(self):
         response = self.client.get(reverse('learning_logs:index'))

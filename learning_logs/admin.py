@@ -1,7 +1,7 @@
 from django.contrib import admin
 from django.db.models import Count
 
-from .models import Entry, Topic
+from .models import Entry, StreamItem, Topic
 
 
 @admin.register(Topic)
@@ -55,3 +55,21 @@ class EntryAdmin(admin.ModelAdmin):
     @admin.display(description='附件', boolean=True)
     def has_document(self, obj):
         return bool(obj.document)
+
+
+@admin.register(StreamItem)
+class StreamItemAdmin(admin.ModelAdmin):
+    list_display = (
+        'event_id',
+        'event_type',
+        'title',
+        'visibility',
+        'owner',
+        'related_entry',
+        'occurred_at',
+    )
+    list_filter = ('event_type', 'visibility', 'occurred_at', 'owner')
+    search_fields = ('event_id', 'title', 'summary', 'owner__username')
+    autocomplete_fields = ('owner', 'related_entry')
+    ordering = ('-occurred_at', '-id')
+    date_hierarchy = 'occurred_at'

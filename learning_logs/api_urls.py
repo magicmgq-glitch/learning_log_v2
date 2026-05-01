@@ -5,8 +5,10 @@ from . import api_views
 app_name = 'learning_logs_api'
 
 urlpatterns = [
+    path('public/stream/', api_views.public_stream_list, name='public_stream_list'),
     path('public/topics/', api_views.public_topic_list, name='public_topic_list'),
     path('public/entries/', api_views.public_entry_list, name='public_entry_list'),
+    path('stream/', api_views.stream_list, name='stream_list'),
     path('topics/', api_views.topic_list, name='topic_list'),
     path('topics/<int:topic_id>/', api_views.topic_detail, name='topic_detail'),
     path('topics/<int:topic_id>/entries/', api_views.entry_list, name='entry_list'),

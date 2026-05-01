@@ -52,3 +52,61 @@ class Entry(models.Model):
         if len(self.text) > 50:
             return f"{self.text[:50]}..."
         return self.text
+
+
+class StreamItem(models.Model):
+    """信息流条目，用于承接高频发布事件。"""
+
+    EVENT_BRIEFING_RELEASE = 'briefing_release'
+    EVENT_ARTIFACT_RELEASE = 'artifact_release'
+    EVENT_TYPE_CHOICES = [
+        (EVENT_BRIEFING_RELEASE, '晨报发布'),
+        (EVENT_ARTIFACT_RELEASE, '执行结果发布'),
+    ]
+
+    VISIBILITY_PUBLIC = 'public'
+    VISIBILITY_PRIVATE = 'private'
+    VISIBILITY_MIXED = 'mixed'
+    VISIBILITY_CHOICES = [
+        (VISIBILITY_PUBLIC, '公开'),
+        (VISIBILITY_PRIVATE, '私有'),
+        (VISIBILITY_MIXED, '混合'),
+    ]
+
+    event_id = models.CharField(max_length=120, unique=True)
+    event_type = models.CharField(max_length=40, choices=EVENT_TYPE_CHOICES, db_index=True)
+    title = models.CharField(max_length=255)
+    summary = models.TextField()
+    occurred_at = models.DateTimeField(db_index=True)
+    visibility = models.CharField(
+        max_length=20,
+        choices=VISIBILITY_CHOICES,
+        default=VISIBILITY_PUBLIC,
+        db_index=True,
+    )
+    owner = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='stream_items',
+    )
+    related_entry = models.ForeignKey(
+        Entry,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='stream_items',
+    )
+    source_object_ids = models.JSONField(default=list, blank=True)
+    payload = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-occurred_at', '-id']
+        verbose_name = '信息流条目'
+        verbose_name_plural = '信息流条目'
+
+    def __str__(self):
+        return f'{self.get_event_type_display()} | {self.title}'

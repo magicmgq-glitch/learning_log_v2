@@ -4,7 +4,7 @@ from django.contrib.auth.decorators import login_required
 from django.db.models import Q
 from django.http import Http404
 from django.shortcuts import render, redirect
-from .models import Topic, Entry
+from .models import Topic, Entry, StreamItem
 from .forms import TopicForm, EntryForm  # 导入我们刚才写的表单
 from .entry_content import build_entry_render_payload
 from .entry_previews import build_entry_preview
@@ -40,6 +40,17 @@ def public_feed(request):
     entry_cards = [{'entry': entry, 'preview': build_entry_preview(entry)} for entry in entries]
     context = {'entries': entries, 'entry_cards': entry_cards}
     return render(request, 'learning_logs/public_feed.html', context)
+
+
+def public_stream(request):
+    """公开信息流：用于展示晨报发布和执行结果发布事件。"""
+    stream_items = (
+        StreamItem.objects.filter(visibility=StreamItem.VISIBILITY_PUBLIC)
+        .select_related('related_entry', 'related_entry__topic', 'related_entry__topic__owner')
+        .order_by('-occurred_at', '-id')[:80]
+    )
+    context = {'stream_items': stream_items}
+    return render(request, 'learning_logs/public_stream.html', context)
 
 
 def public_entry_detail(request, entry_id):

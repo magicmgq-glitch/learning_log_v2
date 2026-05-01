@@ -178,6 +178,11 @@ Example request:
   - `entry.is_public=true`
   - `entry.topic.is_public=true`
 
+### Public Stream
+
+- `GET /api/v1/public/stream/`
+- Returns public stream events.
+
 ## AI-Friendly Alias APIs
 
 These are aliases of existing authenticated write APIs, useful for AI tools:
@@ -185,6 +190,50 @@ These are aliases of existing authenticated write APIs, useful for AI tools:
 - `POST /api/v1/ai/topics/` (same as `POST /api/v1/topics/`)
 - `POST /api/v1/ai/topics/<topic_id>/entries/` (same as `POST /api/v1/topics/<topic_id>/entries/`)
 - `PATCH /api/v1/ai/entries/<entry_id>/` (same as `PATCH /api/v1/entries/<entry_id>/`)
+
+## Stream APIs
+
+### List Stream Events
+
+- `GET /api/v1/stream/`
+- Returns authenticated access to system stream events.
+
+### Create Or Upsert Stream Event
+
+- `POST /api/v1/stream/`
+- Current first-pass support only accepts:
+  - `briefing_release`
+  - `artifact_release`
+- Events default to `visibility = public`.
+- Events default to system ownership. Pass `"owner_mode": "user"` only when a stream event must explicitly belong to the authenticated user.
+- Public stream events expose event metadata and public archive links only; private entry content remains protected.
+
+Example request:
+
+```json
+{
+  "request_id": "req-briefing-1",
+  "output_kind": "waterfall_item",
+  "source_object_ids": ["briefing:2026-05-01"],
+  "generated_at": "2026-05-01T09:00:00+08:00",
+  "visibility": "public",
+  "delivery_targets": ["learning_log_stream"],
+  "payload": {
+    "item_id": "evt-briefing-2026-05-01",
+    "item_type": "briefing_release",
+    "display_title": "AI 晨报已发布",
+    "display_summary": "今天的晨报已经生成，并已同步到公开笔记。",
+    "occurred_at": "2026-05-01T09:00:00+08:00",
+    "related_entry_id": 12,
+    "source_links": [
+      {
+        "label": "晨报详情",
+        "url": "https://example.com/briefing"
+      }
+    ]
+  }
+}
+```
 
 ## iOS Notes
 
