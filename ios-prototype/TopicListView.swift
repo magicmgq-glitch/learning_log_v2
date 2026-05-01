@@ -4,12 +4,16 @@ struct TopicListView: View {
     @EnvironmentObject private var session: SessionStore
     @State private var showingNewTopicSheet = false
     @State private var newTopicText = ""
+    @State private var newTopicIsPublic = false
     @State private var newTopicErrorMessage = ""
     @State private var isSubmittingNewTopic = false
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
+                headerRow
+                publicSquareEntry
+
                 if session.topics.isEmpty && !session.isLoading {
                     emptyState
                 } else {
@@ -39,30 +43,46 @@ struct TopicListView: View {
                 }
             }
 
-            ToolbarItemGroup(placement: .topBarTrailing) {
-                Button("新建") {
-                    newTopicText = ""
-                    newTopicErrorMessage = ""
-                    showingNewTopicSheet = true
-                }
-
-                Button("刷新") {
-                    Task {
-                        await session.reloadTopics()
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    NavigationLink {
+                        StreamListView()
+                    } label: {
+                        Label("信息流", systemImage: "dot.radiowaves.left.and.right")
                     }
-                }
 
-                Button("退出") {
-                    session.logout()
+                    Button {
+                        Task {
+                            await session.reloadTopics()
+                        }
+                    } label: {
+                        Label("刷新", systemImage: "arrow.clockwise")
+                    }
+
+                    Divider()
+
+                    Button(role: .destructive) {
+                        session.logout()
+                    } label: {
+                        Label("退出", systemImage: "rectangle.portrait.and.arrow.right")
+                    }
+                } label: {
+                    Image(systemName: "line.3.horizontal")
+                        .font(.headline)
+                        .frame(width: 28, height: 28)
                 }
+                .accessibilityLabel("更多操作")
             }
         }
-        .navigationTitle("学习主题")
+        .navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $showingNewTopicSheet) {
             NavigationStack {
                 VStack(alignment: .leading, spacing: 12) {
                     TextField("主题名称", text: $newTopicText)
                         .textFieldStyle(.roundedBorder)
+
+                    Toggle("公开主题（主题下笔记默认可见）", isOn: $newTopicIsPublic)
+                        .font(.subheadline)
 
                     if !newTopicErrorMessage.isEmpty {
                         Text(newTopicErrorMessage)
@@ -100,6 +120,53 @@ struct TopicListView: View {
         }
     }
 
+    private var headerRow: some View {
+        HStack(alignment: .center) {
+            Text("学习主题")
+                .font(.title2.weight(.semibold))
+
+            Spacer()
+
+            Button("添加新主题") {
+                newTopicText = ""
+                newTopicIsPublic = false
+                newTopicErrorMessage = ""
+                showingNewTopicSheet = true
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.small)
+        }
+        .padding(.vertical, 2)
+    }
+
+    private var publicSquareEntry: some View {
+        NavigationLink {
+            PublicSquareView()
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: "globe.asia.australia.fill")
+                    .foregroundStyle(.blue)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("笔记广场")
+                        .font(.subheadline.weight(.semibold))
+                    Text("浏览所有公开笔记")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(12)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(Color(.secondarySystemGroupedBackground))
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
     private var emptyState: some View {
         VStack(spacing: 10) {
             Image(systemName: "book.closed")
@@ -107,7 +174,7 @@ struct TopicListView: View {
                 .foregroundStyle(.secondary)
             Text("还没有主题")
                 .font(.headline)
-            Text("你可以先在网页端添加主题，iOS 端会同步显示。")
+            Text("你可以点击上方“添加新主题”创建第一条主题。")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -131,7 +198,7 @@ struct TopicListView: View {
         isSubmittingNewTopic = true
         newTopicErrorMessage = ""
         do {
-            let topic = try await session.createTopic(text: trimmed)
+            let topic = try await session.createTopic(text: trimmed, isPublic: newTopicIsPublic)
             session.topics.append(topic)
             showingNewTopicSheet = false
         } catch {
@@ -151,8 +218,21 @@ private struct TopicCard: View {
                 .padding(.top, 2)
 
             VStack(alignment: .leading, spacing: 6) {
-                Text(topic.text)
-                    .font(.headline)
+                HStack(spacing: 8) {
+                    Text(topic.text)
+                        .font(.headline)
+                    if topic.isPublic {
+                        Text("已公开")
+                            .font(.caption2.weight(.semibold))
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .foregroundStyle(.green)
+                            .background(
+                                Capsule(style: .continuous)
+                                    .fill(Color.green.opacity(0.14))
+                            )
+                    }
+                }
                 Text("创建于 \(displayTopicDate(from: topic.dateAdded))")
                     .font(.caption)
                     .foregroundStyle(.secondary)

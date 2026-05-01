@@ -1,11 +1,36 @@
 import Foundation
+import Security
 
 @MainActor
 final class SessionStore: ObservableObject {
     private static let serverBaseURLKey = "serverBaseURL"
+    private static let rememberedUsernameKey = "rememberedUsername"
+    private static let rememberPasswordKey = "rememberPasswordEnabled"
+    private static let autoLoginEnabledKey = "autoLoginEnabled"
+    private static let keychainService = "learning_log_v2_ios"
+    private static let keychainAccount = "saved_password"
 
     @Published var username = ""
     @Published var password = ""
+    @Published var rememberPassword = false {
+        didSet {
+            UserDefaults.standard.set(rememberPassword, forKey: Self.rememberPasswordKey)
+            if !rememberPassword {
+                autoLoginEnabled = false
+                clearSavedPassword()
+            } else if !password.isEmpty {
+                savePassword(password)
+            }
+        }
+    }
+    @Published var autoLoginEnabled = false {
+        didSet {
+            if autoLoginEnabled && !rememberPassword {
+                rememberPassword = true
+            }
+            UserDefaults.standard.set(autoLoginEnabled, forKey: Self.autoLoginEnabledKey)
+        }
+    }
     @Published var serverBaseURL: String {
         didSet {
             apiClient.baseURLString = serverBaseURL
@@ -14,6 +39,7 @@ final class SessionStore: ObservableObject {
     }
     @Published var currentUser: UserProfile?
     @Published var topics: [Topic] = []
+    @Published var publicEntries: [Entry] = []
     @Published var errorMessage = ""
     @Published var isLoading = false
     @Published var isAuthenticated = false
@@ -21,12 +47,30 @@ final class SessionStore: ObservableObject {
     private let apiClient: APIClient
     private(set) var accessToken: String?
     private(set) var refreshToken: String?
+    private var hasBootstrapped = false
 
     init() {
-        let savedURL = UserDefaults.standard.string(forKey: Self.serverBaseURLKey)
+        let defaults = UserDefaults.standard
+        let savedURL = defaults.string(forKey: Self.serverBaseURLKey)
         let defaultURL = "http://127.0.0.1:8000"
         self.serverBaseURL = savedURL ?? defaultURL
         self.apiClient = APIClient(baseURLString: savedURL ?? defaultURL)
+        self.rememberPassword = defaults.bool(forKey: Self.rememberPasswordKey)
+        self.autoLoginEnabled = defaults.bool(forKey: Self.autoLoginEnabledKey)
+        self.username = defaults.string(forKey: Self.rememberedUsernameKey) ?? ""
+
+        if rememberPassword {
+            self.password = loadSavedPassword() ?? ""
+        }
+    }
+
+    func bootstrapIfNeeded() async {
+        guard !hasBootstrapped else { return }
+        hasBootstrapped = true
+
+        guard autoLoginEnabled else { return }
+        guard !username.isEmpty, !password.isEmpty else { return }
+        await login()
     }
 
     func login() async {
@@ -44,12 +88,41 @@ final class SessionStore: ObservableObject {
             let topicResponse = try await apiClient.topics(accessToken: tokens.access)
             topics = topicResponse.topics
             isAuthenticated = true
+            persistLoginPreferences()
         } catch {
             errorMessage = error.localizedDescription
             isAuthenticated = false
         }
 
         isLoading = false
+    }
+
+    func register(username: String, password: String, confirmPassword: String) async throws {
+        errorMessage = ""
+        isLoading = true
+        defer { isLoading = false }
+
+        do {
+            let response = try await apiClient.register(
+                username: username,
+                password: password,
+                confirmPassword: confirmPassword
+            )
+            accessToken = response.tokens.access
+            refreshToken = response.tokens.refresh
+            currentUser = response.user
+            self.username = username
+            self.password = password
+
+            let topicResponse = try await apiClient.topics(accessToken: response.tokens.access)
+            topics = topicResponse.topics
+            isAuthenticated = true
+            persistLoginPreferences()
+        } catch {
+            errorMessage = error.localizedDescription
+            isAuthenticated = false
+            throw error
+        }
     }
 
     func reloadTopics() async {
@@ -74,18 +147,34 @@ final class SessionStore: ObservableObject {
         }
     }
 
-    func createTopic(text: String) async throws -> Topic {
+    func fetchPublicEntries() async throws -> [Entry] {
+        let response = try await apiClient.publicEntries()
+        publicEntries = response.entries
+        return response.entries
+    }
+
+    func fetchPublicStream() async throws -> [StreamItem] {
+        let response = try await apiClient.publicStream()
+        return response.streamItems
+    }
+
+    func createTopic(text: String, isPublic: Bool = false) async throws -> Topic {
         let response = try await performAuthorizedRequest { accessToken in
-            try await self.apiClient.createTopic(text: text, accessToken: accessToken)
+            try await self.apiClient.createTopic(
+                text: text,
+                isPublic: isPublic,
+                accessToken: accessToken
+            )
         }
         return response.topic
     }
 
-    func updateTopic(topicID: Int, text: String) async throws -> Topic {
+    func updateTopic(topicID: Int, text: String, isPublic: Bool = false) async throws -> Topic {
         let response = try await performAuthorizedRequest { accessToken in
             try await self.apiClient.updateTopic(
                 topicID: topicID,
                 text: text,
+                isPublic: isPublic,
                 accessToken: accessToken
             )
         }
@@ -99,11 +188,12 @@ final class SessionStore: ObservableObject {
         }
     }
 
-    func createEntry(topicID: Int, text: String) async throws -> Entry {
+    func createEntry(topicID: Int, text: String, isPublic: Bool = false) async throws -> Entry {
         let response = try await performAuthorizedRequest { accessToken in
             try await self.apiClient.createEntry(
                 topicID: topicID,
                 text: text,
+                isPublic: isPublic,
                 accessToken: accessToken
             )
         }
@@ -117,11 +207,12 @@ final class SessionStore: ObservableObject {
         }
     }
 
-    func updateEntry(entryID: Int, text: String) async throws -> Entry {
+    func updateEntry(entryID: Int, text: String, isPublic: Bool = false) async throws -> Entry {
         let response = try await performAuthorizedRequest { accessToken in
             try await self.apiClient.updateEntry(
                 entryID: entryID,
                 text: text,
+                isPublic: isPublic,
                 accessToken: accessToken
             )
         }
@@ -192,8 +283,64 @@ final class SessionStore: ObservableObject {
         refreshToken = nil
         currentUser = nil
         topics = []
-        password = ""
+        publicEntries = []
+        if !rememberPassword {
+            password = ""
+        }
         isAuthenticated = false
         errorMessage = ""
+    }
+
+    private func persistLoginPreferences() {
+        let defaults = UserDefaults.standard
+        defaults.set(username, forKey: Self.rememberedUsernameKey)
+        defaults.set(rememberPassword, forKey: Self.rememberPasswordKey)
+        defaults.set(autoLoginEnabled, forKey: Self.autoLoginEnabledKey)
+
+        if rememberPassword {
+            savePassword(password)
+        } else {
+            clearSavedPassword()
+        }
+    }
+
+    private func savePassword(_ value: String) {
+        guard let data = value.data(using: .utf8) else { return }
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: Self.keychainService,
+            kSecAttrAccount as String: Self.keychainAccount,
+        ]
+
+        SecItemDelete(query as CFDictionary)
+
+        var addQuery = query
+        addQuery[kSecValueData as String] = data
+        SecItemAdd(addQuery as CFDictionary, nil)
+    }
+
+    private func loadSavedPassword() -> String? {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: Self.keychainService,
+            kSecAttrAccount as String: Self.keychainAccount,
+            kSecMatchLimit as String: kSecMatchLimitOne,
+            kSecReturnData as String: true,
+        ]
+
+        var item: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &item)
+        guard status == errSecSuccess else { return nil }
+        guard let data = item as? Data else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+
+    private func clearSavedPassword() {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: Self.keychainService,
+            kSecAttrAccount as String: Self.keychainAccount,
+        ]
+        SecItemDelete(query as CFDictionary)
     }
 }

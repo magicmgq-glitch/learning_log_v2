@@ -22,23 +22,34 @@ enum APIError: LocalizedError {
 
 private struct TopicUpdateRequest: Encodable {
     let text: String
+    let is_public: Bool
 }
 
 private struct TopicCreateRequest: Encodable {
     let text: String
+    let is_public: Bool
 }
 
 private struct EntryCreateRequest: Encodable {
     let text: String
+    let is_public: Bool
 }
 
 private struct EntryUpdateRequest: Encodable {
     let text: String
+    let is_public: Bool
+}
+
+private struct RegisterRequest: Encodable {
+    let username: String
+    let password1: String
+    let password2: String
 }
 
 private struct APIErrorPayload: Decodable {
     let error: String?
     let detail: String?
+    let errors: [String: [String]]?
 }
 
 private final class UploadProgressDelegate: NSObject, URLSessionDataDelegate, URLSessionTaskDelegate {
@@ -136,6 +147,21 @@ final class APIClient {
         )
     }
 
+    func register(username: String, password: String, confirmPassword: String) async throws -> RegisterResponse {
+        let requestBody = RegisterRequest(
+            username: username,
+            password1: password,
+            password2: confirmPassword
+        )
+        return try await send(
+            path: "/api/v1/auth/register/",
+            method: "POST",
+            body: requestBody,
+            accessToken: nil,
+            responseType: RegisterResponse.self
+        )
+    }
+
     func refreshAccessToken(refreshToken: String) async throws -> AccessTokenResponse {
         struct RefreshRequest: Encodable {
             let refresh: String
@@ -170,6 +196,26 @@ final class APIClient {
         )
     }
 
+    func publicEntries() async throws -> EntryListResponse {
+        try await send(
+            path: "/api/v1/public/entries/",
+            method: "GET",
+            body: Optional<String>.none,
+            accessToken: nil,
+            responseType: EntryListResponse.self
+        )
+    }
+
+    func publicStream() async throws -> StreamListResponse {
+        try await send(
+            path: "/api/v1/public/stream/",
+            method: "GET",
+            body: Optional<String>.none,
+            accessToken: nil,
+            responseType: StreamListResponse.self
+        )
+    }
+
     func topicDetail(topicID: Int, accessToken: String) async throws -> TopicDetailResponse {
         try await send(
             path: "/api/v1/topics/\(topicID)/",
@@ -180,8 +226,8 @@ final class APIClient {
         )
     }
 
-    func createTopic(text: String, accessToken: String) async throws -> TopicResponse {
-        let requestBody = TopicCreateRequest(text: text)
+    func createTopic(text: String, isPublic: Bool, accessToken: String) async throws -> TopicResponse {
+        let requestBody = TopicCreateRequest(text: text, is_public: isPublic)
         return try await send(
             path: "/api/v1/topics/",
             method: "POST",
@@ -191,8 +237,13 @@ final class APIClient {
         )
     }
 
-    func updateTopic(topicID: Int, text: String, accessToken: String) async throws -> TopicResponse {
-        let requestBody = TopicUpdateRequest(text: text)
+    func updateTopic(
+        topicID: Int,
+        text: String,
+        isPublic: Bool,
+        accessToken: String
+    ) async throws -> TopicResponse {
+        let requestBody = TopicUpdateRequest(text: text, is_public: isPublic)
         return try await send(
             path: "/api/v1/topics/\(topicID)/",
             method: "PATCH",
@@ -213,8 +264,13 @@ final class APIClient {
         )
     }
 
-    func createEntry(topicID: Int, text: String, accessToken: String) async throws -> EntryResponse {
-        let requestBody = EntryCreateRequest(text: text)
+    func createEntry(
+        topicID: Int,
+        text: String,
+        isPublic: Bool,
+        accessToken: String
+    ) async throws -> EntryResponse {
+        let requestBody = EntryCreateRequest(text: text, is_public: isPublic)
         return try await send(
             path: "/api/v1/topics/\(topicID)/entries/",
             method: "POST",
@@ -235,8 +291,13 @@ final class APIClient {
         )
     }
 
-    func updateEntry(entryID: Int, text: String, accessToken: String) async throws -> EntryDetailResponse {
-        let requestBody = EntryUpdateRequest(text: text)
+    func updateEntry(
+        entryID: Int,
+        text: String,
+        isPublic: Bool,
+        accessToken: String
+    ) async throws -> EntryDetailResponse {
+        let requestBody = EntryUpdateRequest(text: text, is_public: isPublic)
         return try await send(
             path: "/api/v1/entries/\(entryID)/",
             method: "PATCH",
@@ -422,9 +483,14 @@ final class APIClient {
         }
 
         if !(200...299).contains(httpResponse.statusCode) {
-            let fallback = path.contains("/auth/token/")
-                ? "登录失败，请检查账号或密码。"
-                : "请求失败，请稍后重试。"
+            let fallback: String
+            if path.contains("/auth/token/") {
+                fallback = "登录失败，请检查账号或密码。"
+            } else if path.contains("/auth/register/") {
+                fallback = "注册失败，请检查输入信息。"
+            } else {
+                fallback = "请求失败，请稍后重试。"
+            }
             let message = userFriendlyServerMessage(
                 statusCode: httpResponse.statusCode,
                 data: data,
@@ -449,6 +515,16 @@ final class APIClient {
         }
 
         if let payload = try? JSONDecoder().decode(APIErrorPayload.self, from: data) {
+            if let errors = payload.errors {
+                for key in ["username", "password1", "password2", "__all__"] {
+                    if let first = errors[key]?.first, !first.isEmpty {
+                        return first
+                    }
+                }
+                if let firstField = errors.first, let first = firstField.value.first, !first.isEmpty {
+                    return first
+                }
+            }
             let raw = (payload.error ?? payload.detail ?? "").lowercased()
             if raw.contains("invalid or expired token") {
                 return "登录状态已过期，请重新登录。"
