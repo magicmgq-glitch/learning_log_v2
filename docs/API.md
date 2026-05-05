@@ -137,9 +137,15 @@ Text-only example:
 ```json
 {
   "text": "Learned how JWT works.",
-  "is_public": false
+  "is_public": false,
+  "source_type": "user"
 }
 ```
+
+Notes:
+
+- `source_type` defaults to `user`.
+- `source_type = system` is reserved for system publishers such as `miaoAI`.
 
 ### Entry Detail
 
@@ -156,7 +162,8 @@ Example request:
 {
   "text": "Updated note",
   "is_public": true,
-  "clear_image": true
+  "clear_image": true,
+  "source_type": "user"
 }
 ```
 
@@ -175,6 +182,14 @@ Example request:
 
 - `GET /api/v1/public/entries/`
 - Returns entries that match either condition:
+  - `entry.is_public=true`
+  - `entry.topic.is_public=true`
+
+### Public Entry Detail
+
+- `GET /api/v1/public/entries/<entry_id>/`
+- Returns one public entry detail object.
+- Only works for entries that match either:
   - `entry.is_public=true`
   - `entry.topic.is_public=true`
 

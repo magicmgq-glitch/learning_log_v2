@@ -20,9 +20,15 @@ class Entry(models.Model):
     """学到的有关某个主题的具体知识（日志条目）"""
     CONTENT_MARKDOWN = 'markdown'
     CONTENT_HTML = 'html'
+    SOURCE_USER = 'user'
+    SOURCE_SYSTEM = 'system'
     CONTENT_FORMAT_CHOICES = [
         (CONTENT_MARKDOWN, 'Markdown 笔记'),
         (CONTENT_HTML, 'HTML 页面'),
+    ]
+    SOURCE_TYPE_CHOICES = [
+        (SOURCE_USER, '用户笔记'),
+        (SOURCE_SYSTEM, '系统归档'),
     ]
 
     # 核心：将条目与特定主题绑定（一对多关系）
@@ -34,6 +40,13 @@ class Entry(models.Model):
         choices=CONTENT_FORMAT_CHOICES,
         default=CONTENT_MARKDOWN,
         verbose_name='内容格式',
+    )
+    source_type = models.CharField(
+        max_length=20,
+        choices=SOURCE_TYPE_CHOICES,
+        default=SOURCE_USER,
+        db_index=True,
+        verbose_name='内容来源',
     )
     date_added = models.DateTimeField(auto_now_add=True)
 

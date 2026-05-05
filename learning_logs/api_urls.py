@@ -8,6 +8,7 @@ urlpatterns = [
     path('public/stream/', api_views.public_stream_list, name='public_stream_list'),
     path('public/topics/', api_views.public_topic_list, name='public_topic_list'),
     path('public/entries/', api_views.public_entry_list, name='public_entry_list'),
+    path('public/entries/<int:entry_id>/', api_views.public_entry_detail, name='public_entry_detail'),
     path('stream/', api_views.stream_list, name='stream_list'),
     path('topics/', api_views.topic_list, name='topic_list'),
     path('topics/<int:topic_id>/', api_views.topic_detail, name='topic_detail'),

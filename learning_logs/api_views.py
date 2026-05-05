@@ -44,6 +44,7 @@ VALID_CONTENT_FORMATS = {
 STREAM_DEFAULT_LIMIT = 50
 STREAM_MAX_LIMIT = 100
 HTML_SOURCE_ERROR = 'HTML 内容需要提交源码，而不是网页显示后的文字。'
+SYSTEM_PUBLISHER_USERNAMES = {'miaoAI'}
 
 
 def api_login_required(view_func):
@@ -114,6 +115,7 @@ def serialize_entry(request, entry, include_owner=False):
         'topic_is_public': entry.topic.is_public,
         'text': entry.text,
         'content_format': entry.content_format,
+        'source_type': entry.source_type,
         'date_added': entry.date_added.isoformat(),
         'is_public': entry.is_public,
         'effective_is_public': bool(entry.is_public or entry.topic.is_public),
@@ -189,6 +191,21 @@ def get_owned_entry(user, entry_id):
     return Entry.objects.filter(id=entry_id, topic__owner=user).select_related('topic').first()
 
 
+def get_public_entry(entry_id):
+    return (
+        Entry.objects.filter(id=entry_id)
+        .filter(Q(is_public=True) | Q(topic__is_public=True))
+        .select_related('topic', 'topic__owner')
+        .first()
+    )
+
+
+def is_system_publisher(user):
+    if not getattr(user, 'is_authenticated', False):
+        return False
+    return user.username in SYSTEM_PUBLISHER_USERNAMES
+
+
 def parse_optional_bool(value):
     if value is None:
         return None
@@ -216,6 +233,17 @@ def parse_optional_content_format(value):
     return None
 
 
+def parse_optional_source_type(value):
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip().lower()
+    if normalized in {Entry.SOURCE_USER, Entry.SOURCE_SYSTEM}:
+        return normalized
+    return None
+
+
 def apply_entry_updates(entry, data):
     text = data.get('text')
     if text is not None:
@@ -223,6 +251,9 @@ def apply_entry_updates(entry, data):
     content_format = parse_optional_content_format(data.get('content_format'))
     if content_format is not None:
         entry.content_format = content_format
+    source_type = parse_optional_source_type(data.get('source_type'))
+    if source_type is not None:
+        entry.source_type = source_type
     is_public = parse_optional_bool(data.get('is_public'))
     if is_public is not None:
         entry.is_public = is_public
@@ -424,6 +455,20 @@ def public_entry_list(request):
         .order_by('-date_added')
     )
     return JsonResponse({'entries': [serialize_entry(request, entry, include_owner=True) for entry in entries]})
+
+
+@require_http_methods(['GET'])
+def public_entry_detail(request, entry_id):
+    entry = get_public_entry(entry_id)
+    if entry is None:
+        return JsonResponse({'error': 'Entry not found.'}, status=404)
+
+    return JsonResponse(
+        {
+            'topic': serialize_topic(entry.topic, include_owner=True),
+            'entry': serialize_entry(request, entry, include_owner=True),
+        }
+    )
 
 
 @require_http_methods(['GET'])
@@ -638,9 +683,15 @@ def entry_list(request, topic_id):
         return JsonResponse({'error': 'Entry text is required.'}, status=400)
     raw_text = data.get('text') or ''
     content_format = parse_optional_content_format(data.get('content_format'))
+    source_type = parse_optional_source_type(data.get('source_type'))
     if data.get('content_format') is not None and content_format is None:
         return JsonResponse({'error': 'Content format must be markdown or html.'}, status=400)
+    if data.get('source_type') is not None and source_type is None:
+        return JsonResponse({'error': 'source_type must be user or system.'}, status=400)
     content_format = content_format or Entry.CONTENT_MARKDOWN
+    if source_type == Entry.SOURCE_SYSTEM and not is_system_publisher(request.user):
+        return JsonResponse({'error': 'Only system publishers can set source_type=system.'}, status=403)
+    source_type = source_type or Entry.SOURCE_USER
     html_validation_error = validate_entry_text_for_format(raw_text, content_format)
     if html_validation_error:
         return JsonResponse({'error': html_validation_error}, status=400)
@@ -677,6 +728,7 @@ def entry_list(request, topic_id):
         topic=topic,
         text=raw_text,
         content_format=content_format,
+        source_type=source_type,
         is_public=bool(parse_optional_bool(data.get('is_public'))),
         image=image_upload,
         video=None,
@@ -719,17 +771,22 @@ def entry_detail(request, entry_id):
 
     text = data.get('text')
     content_format = parse_optional_content_format(data.get('content_format'))
+    source_type = parse_optional_source_type(data.get('source_type'))
     visibility = parse_optional_bool(data.get('is_public'))
     clear_fields = any(
         data.get(key) for key in ['clear_image', 'clear_video', 'clear_document']
     )
     if data.get('content_format') is not None and content_format is None:
         return JsonResponse({'error': 'Content format must be markdown or html.'}, status=400)
+    if data.get('source_type') is not None and source_type is None:
+        return JsonResponse({'error': 'source_type must be user or system.'}, status=400)
+    if source_type == Entry.SOURCE_SYSTEM and not is_system_publisher(request.user):
+        return JsonResponse({'error': 'Only system publishers can set source_type=system.'}, status=403)
 
     if request.method == 'PUT':
         if not (text or '').strip():
             return JsonResponse({'error': 'Entry text is required.'}, status=400)
-    elif text is None and not clear_fields and visibility is None and content_format is None:
+    elif text is None and not clear_fields and visibility is None and content_format is None and source_type is None:
         return JsonResponse({'error': 'No fields to update.'}, status=400)
 
     if text is not None and not text.strip():

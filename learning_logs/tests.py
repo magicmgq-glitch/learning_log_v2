@@ -135,9 +135,11 @@ class EntryApiTests(TestCase):
     def setUp(self):
         self.user = User.objects.create_user(username='alice', password='secret123')
         self.other_user = User.objects.create_user(username='bob', password='secret123')
+        self.system_user = User.objects.create_user(username='miaoAI', password='secret123')
 
         self.topic = Topic.objects.create(text='Python', owner=self.user)
         self.other_topic = Topic.objects.create(text='Private', owner=self.other_user)
+        self.system_topic = Topic.objects.create(text='系统简报', owner=self.system_user, is_public=True)
         self.entry = Entry.objects.create(topic=self.topic, text='Learned about APIs.')
         self.other_entry = Entry.objects.create(topic=self.other_topic, text='Private note.')
 
@@ -186,6 +188,53 @@ class EntryApiTests(TestCase):
         self.assertEqual(payload['entry']['text'], 'Built the first entry API.')
         self.assertTrue(
             Entry.objects.filter(topic=self.topic, text='Built the first entry API.').exists()
+        )
+
+    def test_create_entry_defaults_source_type_user(self):
+        self.client.login(username='alice', password='secret123')
+
+        response = self.client.post(
+            reverse('learning_logs_api:entry_list', kwargs={'topic_id': self.topic.id}),
+            data=json.dumps({'text': 'Default source type note'}),
+            content_type='application/json',
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.json()['entry']['source_type'], Entry.SOURCE_USER)
+
+    def test_non_system_user_cannot_create_system_source_entry(self):
+        self.client.login(username='alice', password='secret123')
+
+        response = self.client.post(
+            reverse('learning_logs_api:entry_list', kwargs={'topic_id': self.topic.id}),
+            data=json.dumps({'text': 'Illegal system note', 'source_type': Entry.SOURCE_SYSTEM}),
+            content_type='application/json',
+        )
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(
+            response.json()['error'],
+            'Only system publishers can set source_type=system.',
+        )
+
+    def test_system_user_can_create_system_source_entry(self):
+        self.client.login(username='miaoAI', password='secret123')
+
+        response = self.client.post(
+            reverse('learning_logs_api:entry_list', kwargs={'topic_id': self.system_topic.id}),
+            data=json.dumps({'text': '系统简报正文', 'source_type': Entry.SOURCE_SYSTEM, 'is_public': True}),
+            content_type='application/json',
+        )
+
+        self.assertEqual(response.status_code, 201)
+        payload = response.json()
+        self.assertEqual(payload['entry']['source_type'], Entry.SOURCE_SYSTEM)
+        self.assertTrue(
+            Entry.objects.filter(
+                topic=self.system_topic,
+                text='系统简报正文',
+                source_type=Entry.SOURCE_SYSTEM,
+            ).exists()
         )
 
     def test_create_html_entry_from_json_persists_content_format(self):
@@ -698,6 +747,35 @@ class PublicApiTests(TestCase):
         self.assertIn('Entry-only public', texts)
         self.assertIn('Topic public entry', texts)
         self.assertNotIn('Private entry', texts)
+
+    def test_public_entry_detail_returns_single_public_entry(self):
+        public_entry = Entry.objects.create(
+            topic=Topic.objects.create(text='System Topic', owner=self.user, is_public=True),
+            text='System archive note',
+            is_public=False,
+            source_type=Entry.SOURCE_SYSTEM,
+        )
+
+        response = self.client.get(
+            reverse('learning_logs_api:public_entry_detail', kwargs={'entry_id': public_entry.id})
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload['entry']['id'], public_entry.id)
+        self.assertEqual(payload['entry']['source_type'], Entry.SOURCE_SYSTEM)
+        self.assertEqual(payload['entry']['owner_username'], self.user.username)
+
+    def test_public_entry_detail_rejects_private_entry(self):
+        private_topic = Topic.objects.create(text='Private Topic', owner=self.user, is_public=False)
+        private_entry = Entry.objects.create(topic=private_topic, text='Private only', is_public=False)
+
+        response = self.client.get(
+            reverse('learning_logs_api:public_entry_detail', kwargs={'entry_id': private_entry.id})
+        )
+
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.json()['error'], 'Entry not found.')
 
 
 class StreamApiTests(TestCase):
